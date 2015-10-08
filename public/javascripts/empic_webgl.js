@@ -847,8 +847,11 @@ define(['utilities'], function (util){
         inv_cdf.texture.bind(programStepPositionA, "u_inv_cdf");
 
         // ---------------------------------------------------------------------
-        // program for rendering particles into a density function
-        var programRenderDensity = webgl.linkProgram({
+        // program for rendering particles into a density and velocity function
+
+        var moments01 = webgl.addFrameBuffer(spec.nr, spec.nz, true);
+
+        var programMoments01 = webgl.linkProgram({
             vertexShaderSource : (function() {
                 var src_arr = [
                     "attribute vec2 a_particleTexCoord;",
@@ -858,6 +861,7 @@ define(['utilities'], function (util){
 
                     "uniform float u_pointsize;",
 
+                    "uniform float u_weight;",
                     "varying vec4 v_color;",
 
                     "void main() {",
@@ -871,8 +875,10 @@ define(['utilities'], function (util){
                         "vec2 direction = vec2(position.x/r, position.y/r);",
 
                         "float v = length(velocity);",
+                        "float vr = velocity.x * direction.x + velocity.y * direction.y;",
                         "float va = velocity.y * direction.x - velocity.x * direction.y;",
-                        "v_color = vec4((va < 0.0) ? (1.0 + va / v) : 1.0, (1.0 + va / v) * (1.0 - va / v), (va > 0.0) ? (1.0 - va / v) : 1.0, 1.0);",
+                        "v_color = vec4(vr, va, velocity.z, 1.0);",
+                        //"v_color = vec4(1.0, 1.0, 1.0, 1.0);",
                     "}"
                 ];
 
@@ -882,13 +888,12 @@ define(['utilities'], function (util){
                 var src_arr = [
                     "precision highp float;",
 
-                    "uniform float u_weight;",
                     "uniform sampler2D u_shape;",
 
                     "varying vec4 v_color;",
 
                     "void main() {",
-                        "gl_FragColor += u_weight * v_color * texture2D(u_shape, gl_PointCoord);",
+                        "gl_FragColor = v_color * texture2D(u_shape, gl_PointCoord);",
                     "}"
                 ];
 
@@ -908,26 +913,35 @@ define(['utilities'], function (util){
 
 
         var particles_texcoord = webgl.addVertexData(particles_texcoord_arr);
-        particles_texcoord.bind(programRenderDensity, "a_particleTexCoord");
+        particles_texcoord.bind(programMoments01, "a_particleTexCoord");
 
 
-        position_A.texture.bind(programRenderDensity, "u_position");
-        velocity_A.texture.bind(programRenderDensity, "u_velocity");
+        position_A.texture.bind(programMoments01, "u_position");
+        velocity_A.texture.bind(programMoments01, "u_velocity");
 
-        programRenderDensity.setUniformFloat("u_weight", 0.01);
+
 
         var nshape = 11;
         var shape_arr = new Float32Array(4 * nshape * nshape);
 
         var mid = (nshape-1)/2;
 
+        var sum = 0;
+
         for(j = 0; j < nshape; j++) {
             for(i = 0; i < nshape; i++) {
                 var d = Math.sqrt(Math.pow(i - mid, 2) + Math.pow(j - mid, 2));
                 shape_arr[4*(i + nshape*j)] = Math.pow(Math.max(0.0, Math.cos(0.5*Math.PI*d/mid)), 2);
+                sum += shape_arr[4*(i + nshape*j)];
+            }
+        }
+
+        for(j = 0; j < nshape; j++) {
+            for(i = 0; i < nshape; i++) {
+                shape_arr[4*(i + nshape*j)] = shape_arr[4*(i + nshape*j)] / sum;
                 shape_arr[4*(i + nshape*j)+1] = shape_arr[4*(i + nshape*j)];
                 shape_arr[4*(i + nshape*j)+2] = shape_arr[4*(i + nshape*j)];
-                shape_arr[4*(i + nshape*j)+3] = 1.0;
+                shape_arr[4*(i + nshape*j)+3] = shape_arr[4*(i + nshape*j)];
             }
         }
 
@@ -938,12 +952,73 @@ define(['utilities'], function (util){
             true
         );
 
-        shape_tex.bind(programRenderDensity, "u_shape");
-        programRenderDensity.setUniformFloat("u_pointsize", nshape);
+        shape_tex.bind(programMoments01, "u_shape");
+        programMoments01.setUniformFloat("u_pointsize", nshape);
 
+        // ---------------------------------------------------------------------
+        // program for normalizing average of moment
+        //
+        var moments01_norm = webgl.addFrameBuffer(spec.nr, spec.nz, true);
 
+        var programNormalizeMoments01 = webgl.linkProgram({
+            vertexShaderSource : precompute_vert(),
+            fragmentShaderSource : (function() {
+                var src_arr = [
+                    "precision mediump float;",
 
+                    "uniform sampler2D u_moments01;",
+                    // the texCoords passed in from the vertex shader.
+                    "varying vec2 v_texCoord;",
 
+                    "void main() {",
+                        "vec4 M01 = texture2D(u_moments01, v_texCoord);",
+                        //"gl_FragColor = vec4(M01.xyz/M01.w, M01.w);",
+                        "gl_FragColor = (M01.a > 0.0) ? vec4(M01.r / M01.a, M01.g / M01.a, M01.b / M01.a, M01.a) : vec4(0.0, 0.0, 0.0, 0.0);",
+                    "}"
+                ];
+
+                return src_arr.join('\n');
+            })()
+        });
+
+        moments01.texture.bind(programNormalizeMoments01, "u_moments01");
+
+        // triangle vertices
+        vertex_positions.bind(programNormalizeMoments01, "a_position");
+        // texture coordinets for vertices
+        texture_coordinates.bind(programNormalizeMoments01, "a_texCoord");
+
+        // ---------------------------------------------------------------------
+        // program for rendering density as a color
+        //
+        var programDensity = webgl.linkProgram({
+            vertexShaderSource : precompute_vert(),
+            fragmentShaderSource : (function() {
+                var src_arr = [
+                    "precision mediump float;",
+
+                    "uniform sampler2D u_moments01;",
+                    // the texCoords passed in from the vertex shader.
+                    "varying vec2 v_texCoord;",
+
+                    "void main() {",
+                        "vec4 M01 = texture2D(u_moments01, v_texCoord);",
+                        "float v = length(M01.xyz);",
+                        "float va = v > 0.0 ? M01.y / v : 0.0;",
+                        "gl_FragColor = vec4(M01.a * (1.0 + min(0.0, va)), M01.a * (1.0 - abs(va)), M01.a * (1.0 - max(0.0, va)), 1.0);",
+                    "}"
+                ];
+
+                return src_arr.join('\n');
+            })()
+        });
+
+        moments01_norm.texture.bind(programDensity, "u_moments01");
+
+        // triangle vertices
+        vertex_positions.bind(programDensity, "a_position");
+        // texture coordinets for vertices
+        texture_coordinates.bind(programDensity, "a_texCoord");
 
         // ---------------------------------------------------------------------
         // program for setting value of particles
@@ -972,17 +1047,21 @@ define(['utilities'], function (util){
         // texture coordinets for vertices
         texture_coordinates.bind(programSet, "a_texCoord");
 
+        // ---------------------------------------------------------------------
         // initialize random values
-        webgl.disableBlending();
+
         rand_tex.bind(programSet, "u_value");
-        programSet.drawTriangles(0, 6, rand_A);
+
+        programSet.draw({
+            triangles : 6,
+            target : rand_A
+        });
 
         //
         // Output interface for simulation programs
         //
 
         out.set = function(value) {
-            webgl.disableBlending();
 
             if (value.E) {
                 for(i = 0; i < spec.nr; i++) {
@@ -997,7 +1076,10 @@ define(['utilities'], function (util){
                 E_tex.update();
                 E_tex.bind(programSet, "u_value");
 
-                programSet.drawTriangles(0, 6, E);
+                programSet.draw({
+                    triangles : 6,
+                    target : E
+                });
             }
 
             if (value.B) {
@@ -1012,7 +1094,11 @@ define(['utilities'], function (util){
 
                 B_tex.update();
                 B_tex.bind(programSet, "u_value");
-                programSet.drawTriangles(0, 6, B);
+
+                programSet.draw({
+                    triangles : 6,
+                    target : B
+                });
             }
 
             if (value.position) {
@@ -1027,8 +1113,16 @@ define(['utilities'], function (util){
                 // send values to card
                 position_tex.update();
                 position_tex.bind(programSet, "u_value");
-                programSet.drawTriangles(0, 6, position_A);
-                programSet.drawTriangles(0, 6, position_B);
+
+                programSet.draw({
+                    triangles : 6,
+                    target : position_A
+                });
+
+                programSet.draw({
+                    triangles : 6,
+                    target : position_B
+                });
             }
 
             if (value.velocity) {
@@ -1056,7 +1150,11 @@ define(['utilities'], function (util){
 
                 sink_mask_tex.update();
                 sink_mask_tex.bind(programSet, "u_value");
-                programSet.drawTriangles(0, 6, sink_mask);
+
+                programSet.draw({
+                    triangles : 6,
+                    target : sink_mask
+                });
             }
 
 
@@ -1140,86 +1238,143 @@ define(['utilities'], function (util){
 
                 inv_cdf_tex.update();
                 inv_cdf_tex.bind(programSet, "u_value");
-                programSet.drawTriangles(0, 6, inv_cdf);
+
+                programSet.draw({
+                    triangles : 6,
+                    target : inv_cdf
+                });
 
             }
         };
 
         out.addCurrentLoop = function(r, z, I) {
-            // so that particle rendering adds densities
-            webgl.additiveBlending();
 
             programCurrentLoop.setUniformFloat("u_R", r * factor_r);
             programCurrentLoop.setUniformFloat("u_Z", z * factor_z);
             programCurrentLoop.setUniformFloat("u_I", I);
-            programCurrentLoop.drawTriangles(0, 6, B);
+
+            programCurrentLoop.draw({
+                triangles : 6,
+                target : B,
+                blend : ['ONE', 'ONE']
+            });
         };
 
         out.addCurrentZ = function(I) {
-            // so that particle rendering adds densities
-            webgl.additiveBlending();
 
             programCurrentZ.setUniformFloat("u_I", I);
-            programCurrentZ.drawTriangles(0, 6, B);
+
+            programCurrentZ.draw({
+                triangles : 6,
+                target : B,
+                blend : ['ONE', 'ONE']
+            });
         };
 
         out.addBZ = function(Bz) {
-            // so that particle rendering adds densities
-            webgl.additiveBlending();
 
             programBZ.setUniformFloat("u_Bz", Bz);
-            programBZ.drawTriangles(0, 6, B);
+
+            programBZ.draw({
+                triangles : 6,
+                target : B,
+                blend : ['ONE', 'ONE']
+            });
         };
 
         out.addBTheta = function(Btheta) {
-            // so that particle rendering adds densities
-            webgl.additiveBlending();
 
             programBTheta.setUniformFloat("u_Btheta", Btheta);
-            programBTheta.drawTriangles(0, 6, B);
+
+            programBTheta.draw({
+                triangles : 6,
+                target : B,
+                blend : ['ONE', 'ONE']
+            });
         };
 
         out.precalc = function () {
-            R1.clear(0.0, 0.0, 0.0, 1.0);
-            R2.clear(0.0, 0.0, 0.0, 1.0);
-            R3.clear(0.0, 0.0, 0.0, 1.0);
-            A.clear(0.0, 0.0, 0.0, 1.0);
 
-            // so that particle rendering adds densities
-            webgl.additiveBlending();
+            programPre1.draw({
+                triangles : 6,
+                target : R1
+            });
 
-            programPre1.drawTriangles(0, 6, R1);
-            programPre2.drawTriangles(0, 6, R2);
-            programPre3.drawTriangles(0, 6, R3);
-            programPreA.drawTriangles(0, 6, A);
+            programPre2.draw({
+                triangles : 6,
+                target : R2
+            });
+
+            programPre3.draw({
+                triangles : 6,
+                target : R3
+            });
+
+            programPreA.draw({
+                triangles : 6,
+                target : A
+            });
         };
 
         out.step = function () {
-            // have to clear one at a time otherwise data is wiped out
-            webgl.disableBlending();
 
-            programStepRandB.drawTriangles(0, 6, rand_B);
+            programStepRandB.draw({
+                triangles : 6,
+                target : rand_B
+            });
 
-            programStepVelocityB.drawTriangles(0, 6, velocity_B);
+            programStepVelocityB.draw({
+                triangles : 6,
+                target : velocity_B
+            });
 
-            programStepPositionB.drawTriangles(0, 6, position_B);
+            programStepPositionB.draw({
+                triangles : 6,
+                target : position_B
+            });
 
-            programStepRandA.drawTriangles(0, 6, rand_A);
+            programStepRandA.draw({
+                triangles : 6,
+                target : rand_A
+            });
 
-            programStepVelocityA.drawTriangles(0, 6, velocity_A);
+            programStepVelocityA.draw({
+                triangles : 6,
+                target : velocity_A
+            });
 
-            programStepPositionA.drawTriangles(0, 6, position_A);
+            programStepPositionA.draw({
+                triangles : 6,
+                target : position_A
+            });
+
         };
 
         out.density = function() {
-            webgl.clear();
-            webgl.additiveBlending();
-            programRenderDensity.drawPoints(0, nparticles);
 
-            //webgl.disableBlending();
-            //entropy_tex.bind(programSet, "u_value");
-            //programSet.drawTriangles(0, 6);
+            programMoments01.draw({
+                points : nparticles,
+                target : moments01,
+                clear_color : [0,0,0,0],
+                blend : ['ONE', 'ONE']
+            });
 
+            programNormalizeMoments01.draw({
+                triangles : 6,
+                target : moments01_norm
+            });
+
+
+            programDensity.draw({
+                triangles : 6
+            });
+
+/*
+            moments01_norm.texture.bind(programSet, "u_value");
+            programSet.draw({
+                triangles : 6
+            });
+*/
         };
 
         return out;

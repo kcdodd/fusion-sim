@@ -115,7 +115,7 @@ define(function (){
         @param test - object to validate
         @param control - object with properties test object must have
      */
-    exports.validate_object = function(f, test, control) {
+    exports.validate_object = function(test, control) {
 
         for(var prop in control) {
             try {
@@ -149,7 +149,8 @@ define(function (){
         });
 
         // get the webgl interface object from the canvas context.
-        var gl = canvas.getContext("webgl") || canvas.getContext("experimental-webgl");
+        var gl = canvas.getContext("webgl", {premultipliedAlpha: false}) || canvas.getContext("experimental-webgl", {premultipliedAlpha: false});
+        //var gl = canvas.getContext("webgl") || canvas.getContext("experimental-webgl");
 
         // if that fails then abandon
         if (!gl) {
@@ -384,8 +385,73 @@ define(function (){
                 gl.useProgram(null);
             };
 
+            /**
+                target - render to a framebuffer instead of canvas
+                clear_color - clears framebuffer to a specified color before rendering
+                blend - defines any blending to use for rendering
+
+            */
+            prog.draw = function(params) {
+
+                gl.useProgram(program);
+
+                for(var i = 0; i < prog.bindings.length; i++) {
+                    prog.bindings[i]();
+                }
+
+                if (params.target) {
+                    // make this the framebuffer we are rendering to.
+                    gl.bindFramebuffer(gl.FRAMEBUFFER, params.target.frameBuffer);
+
+                    // Tell webgl the viewport setting needed for framebuffer.
+                    gl.viewport(0, 0, params.target.width, params.target.height);
+                }else{
+                    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+
+                    // Tell webgl the viewport setting needed for framebuffer.
+                    gl.viewport(0, 0, canvas.width, canvas.height);
+                }
+
+                if (params.clear_color) {
+
+                    gl.clearColor(
+                        params.clear_color[0],
+                        params.clear_color[1],
+                        params.clear_color[2],
+                        params.clear_color[3]
+                    );
+                    gl.clear(gl.COLOR_BUFFER_BIT);
+
+                }
+
+                if (params.blend) {
+                    gl.enable(gl.BLEND);
+                    gl.blendFunc(gl[params.blend[0]], gl[params.blend[1]]);
+                }else{
+                    gl.disable(gl.BLEND);
+                }
+
+                if (params.depth_test) {
+                    gl.enable(gl.DEPTH_TEST);
+                }else{
+                    gl.disable(gl.DEPTH_TEST);
+                }
+
+                if (params.triangles) {
+                    gl.drawArrays(gl.TRIANGLES, 0, params.triangles);
+                }
+
+                if (params.points) {
+                    gl.drawArrays(gl.POINTS, 0, params.points);
+                }
+
+                // revert back to what was specified as program to use for drawing
+                gl.useProgram(null);
+            };
+
             return prog;
         };
+
 
         /**
             Adds vertex data in the form of 2D array. First index is vertex, second

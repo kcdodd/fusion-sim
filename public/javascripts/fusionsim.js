@@ -83,7 +83,7 @@ define([
                 }
             }
 
-            // partciles
+            // particles
             for(i = 0; i < nparticles; i++) {
                 init_position[i] = [0.2 * Math.random() + 0.0, 0, 0.2*Math.random() + 0.9];
                 init_velocity[i] = [0.001 * (Math.random()-0.5), 0.001 * (Math.random()-0.5), 0.001 * (Math.random()-0.5)];
@@ -114,6 +114,7 @@ define([
             plot_ctx.drawImage(simulation.canvas, 0, 0);
 
             $scope.run = false;
+            $scope.fps = 0;
 
             console.log("initialized");
 
@@ -123,6 +124,9 @@ define([
 
             $scope.start = function() {
                 console.log("started");
+
+                var t_last = Date.now();
+                var N_frames = 0;
 
                 $scope.run = true;
 
@@ -135,7 +139,23 @@ define([
                     plot_ctx.drawImage(simulation.canvas, 0, 0);
 
                     if ($scope.run) {
+
+                        var t_cur = Date.now();
+                        N_frames++;
+
+                        if (t_cur - t_last > 1000){
+                            $scope.$apply(function(){
+
+                                $scope.fps = (N_frames * 1000/(t_cur - t_last)).toFixed(0);
+                                t_last = t_cur;
+                                N_frames = 0;
+                            });
+                        }
+
+
                         requestAnimationFrame(step);
+                    }else{
+                        $scope.fps = 0;
                     }
                 };
 
