@@ -33,7 +33,7 @@ define([
 
             var nparticles = 160000;
 
-            var simulation = empic_webgl.makeCylindricalParticlePusher({
+            var spec = {
                 radius : 1,
                 height : 2,
                 nr : 400,
@@ -42,29 +42,66 @@ define([
                 nparticles : 400,
                 particle_mass : 1.67e-27, //kg : proton
                 particle_charge : 1.602e-19 // C
-            });
+            };
+
+            var simulation = empic_webgl.makeCylindricalParticlePusher(spec);
 
             var init_position = [];
             var init_velocity = [];
+            var sink = [];
+            var source = [];
 
-            for(var i = 0; i < nparticles; i++) {
-                init_position[i] = [0.2 * Math.random() + 0.4, 0, 0.2*Math.random() + 0.9];
-                init_velocity[i] = [0.001 * (Math.random()-0.5), 0.001 * (Math.random()-0.5), 0.001 * (Math.random()-0.5)];
+            var i, j, k;
+
+            for(i = 0; i < spec.nr; i++) {
+                source[i] = [];
+                sink[i] = [];
+
+                for(j = 0; j < spec.nz; j++) {
+                    sink[i][j] = 1.0;
+                    source[i][j] = 0.0;
+                }
             }
 
+            // sink mask
+            for(j = 0; j < spec.nz; j++) {
+                //sink[0][j] = 0;
+                sink[spec.nr-1][j] = 0;
+            }
+            for(i = 1; i < spec.nr-1; i++) {
+                sink[i][0] = 0;
+                sink[i][spec.nz-1] = 0;
+            }
 
+            // source pdf
+
+            for(i = 0; i < 100; i++) {
+
+                for(j = 300; j < 500; j++) {
+
+                    source[i][j] = 1.0;
+                }
+            }
+
+            // partciles
+            for(i = 0; i < nparticles; i++) {
+                init_position[i] = [0.2 * Math.random() + 0.0, 0, 0.2*Math.random() + 0.9];
+                init_velocity[i] = [0.001 * (Math.random()-0.5), 0.001 * (Math.random()-0.5), 0.001 * (Math.random()-0.5)];
+            }
 
             simulation.set({
                 position : init_position,
                 velocity : init_velocity,
+                sink_mask : sink,
+                source_pdf : source
             });
 
-            //simulation.addCurrentLoop(1.0, 2.0, -10000000);
-            //simulation.addCurrentLoop(1.0, 0.0, 10000000);
+            simulation.addCurrentLoop(1.0, 2.0, -10000000);
+            simulation.addCurrentLoop(1.0, 0.0, 10000000);
 
-            simulation.addCurrentLoop(0.5, 1.0, 10000000);
-            simulation.addCurrentZ(5000000);
-            simulation.addBZ(0.01);
+            //simulation.addCurrentLoop(0.5, 1.0, 10000000);
+            //simulation.addCurrentZ(5000000);
+            //simulation.addBZ(0.01);
 
             //simulation.addBTheta(0.01);
 
