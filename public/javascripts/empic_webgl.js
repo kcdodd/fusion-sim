@@ -1031,7 +1031,8 @@ define(['utilities'], function (util){
                     "void main() {",
                         "vec4 M01 = texture2D(u_moments01, v_texCoord);",
                         //"gl_FragColor = vec4(M01.xyz/M01.w, M01.w);",
-                        "gl_FragColor = (M01.a > 0.0) ? vec4(M01.r / M01.a, M01.g / M01.a, M01.b / M01.a, M01.a) : vec4(0.0, 0.0, 0.0, 0.0);",
+                        "M01 = (M01.a > 0.0) ? vec4(M01.r / M01.a, M01.g / M01.a, M01.b / M01.a, M01.a) : vec4(0.0, 0.0, 0.0, 0.0);",
+                        "gl_FragColor = M01 * 0.5 / v_texCoord.x;",
                     "}"
                 ];
 
@@ -1060,7 +1061,7 @@ define(['utilities'], function (util){
 
         moments01_norm.texture.bind(programAvgMoments, "u_next");
         moments01_avgB.texture.bind(programAvgMoments, "u_avg");
-        programAvgMoments.setUniformFloat("u_ratio", 0.05);
+        programAvgMoments.setUniformFloat("u_ratio", 0.01);
 
         // triangle vertices
         vertex_positions.bind(programAvgMoments, "a_position");
@@ -1461,6 +1462,8 @@ define(['utilities'], function (util){
 
         out.density = function() {
 
+
+
             programMoments01.draw({
                 points : nparticles,
                 target : moments01,
@@ -1484,14 +1487,16 @@ define(['utilities'], function (util){
                 target : moments01_avgB
             });
 
-            programDensity.draw({
-                triangles : 6
-            });
-
             programBMag.draw({
                 triangles : 6,
-                blend : ['ONE', 'ONE']
             });
+
+            programDensity.draw({
+                triangles : 6,
+                blend : ['SRC_ALPHA', 'ONE']
+            });
+
+
 
         };
 
