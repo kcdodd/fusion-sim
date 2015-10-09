@@ -75,9 +75,9 @@ define([
 
             // source pdf
 
-            for(i = 0; i < 100; i++) {
+            for(i = 0; i < 50; i++) {
 
-                for(j = 300; j < 500; j++) {
+                for(j = 350; j < 450; j++) {
 
                     source[i][j] = 1.0;
                 }
@@ -96,14 +96,15 @@ define([
                 source_pdf : source
             });
 
-            simulation.addCurrentLoop(1.0, 2.0, -10000000);
-            simulation.addCurrentLoop(1.0, 0.0, 10000000);
+
 
             //simulation.addCurrentLoop(0.5, 1.0, 10000000);
             //simulation.addCurrentZ(5000000);
             //simulation.addBZ(0.01);
 
             //simulation.addBTheta(0.01);
+
+            simulation.addSpindleCuspPlasmaField(1.0, 0.5);
 
             simulation.precalc();
 

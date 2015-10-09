@@ -131,12 +131,16 @@ define(['utilities'], function (util){
         var n_entropy = 1024;
         var entropy_arr = new Float32Array(4 * n_entropy * n_entropy);
 
-        // initialize random values
+        var random_bytes = new Uint32Array(4);
+
+        // initialize entropy values
         for(i = 0; i < n_entropy * n_entropy; i++) {
-            entropy_arr[4 * i] = Math.random();
-            entropy_arr[4 * i + 1] = Math.random();
-            entropy_arr[4 * i + 2] = Math.random();
-            entropy_arr[4 * i + 3] = Math.random();
+
+            window.crypto.getRandomValues(random_bytes);
+            entropy_arr[4 * i] = random_bytes[0] / 0xFFFFFFFF;
+            entropy_arr[4 * i + 1] = random_bytes[1] / 0xFFFFFFFF;
+            entropy_arr[4 * i + 2] = random_bytes[2] / 0xFFFFFFFF;
+            entropy_arr[4 * i + 3] = random_bytes[3] / 0xFFFFFFFF;
         }
 
         var entropy_tex = webgl.addTextureArray(
@@ -238,7 +242,29 @@ define(['utilities'], function (util){
             ];
 
             return src_arr.join('\n');
-        } // precompute_vert()
+        }; // precompute_vert()
+
+        var avg_frag = function() {
+            var src_arr = [
+                "precision mediump float;",
+
+                "uniform float u_ratio;",
+
+                "uniform sampler2D u_next;",
+                "uniform sampler2D u_avg;",
+                // the texCoords passed in from the vertex shader.
+                "varying vec2 v_texCoord;",
+
+                "void main() {",
+                    "vec4 next = texture2D(u_next, v_texCoord);",
+                    "vec4 avg = texture2D(u_avg, v_texCoord);",
+
+                    "gl_FragColor = u_ratio * next + (1.0 - u_ratio) * avg;",
+                "}"
+            ];
+
+            return src_arr.join('\n');
+        }; // avg_frag
 
 
         //
@@ -403,6 +429,37 @@ define(['utilities'], function (util){
                 return src_arr.join('\n');
             })()
         });
+
+        // ---------------------------------------------------------------------
+        var programBMag = webgl.linkProgram({
+            vertexShaderSource : precompute_vert(),
+            fragmentShaderSource : (function() {
+                var src_arr = [
+                    "precision highp float;",
+
+                    "uniform sampler2D u_B;",
+
+                    // the texCoords passed in from the vertex shader.
+                    "varying vec2 v_texCoord;",
+
+                    "void main() {",
+                        "vec3 B = texture2D(u_B, v_texCoord).xyz;",
+                        "float mag = length(B);",
+                        "vec3 dir = B / mag;",
+                        "gl_FragColor =  vec4(mag * abs (min(0.0, dir.z)), mag * dir.x, mag * abs (max(0.0, dir.z)), 1.0);",
+
+                    "}"
+                ];
+
+                return src_arr.join('\n');
+            })()
+        });
+
+        // triangle vertices
+        vertex_positions.bind(programBMag, "a_position");
+        // texture coordinets for vertices
+        texture_coordinates.bind(programBMag, "a_texCoord");
+        B.texture.bind(programBMag, "u_B");
 
         //
         // programs for pre-calculations of the fields
@@ -693,7 +750,7 @@ define(['utilities'], function (util){
                     "vec3 next_velocity = vec3(cylindrical_velocity.x * direction.x - cylindrical_velocity.y * direction.y, cylindrical_velocity.x * direction.y + cylindrical_velocity.y * direction.x, cylindrical_velocity.z);",
 
                     // position4.a === 0 indicates that the particle was just generated and needs a new velocity
-                    "gl_FragColor = position4.a > 0.5 ? vec4(next_velocity, 1.0) : 0.001 * vec4(rand.x, 0.0, 0.0, 1.0);",
+                    "gl_FragColor = position4.a > 0.5 ? vec4(next_velocity, 1.0) : 0.001 * vec4(2.0 * rand.x - 1.0, 2.0 * rand.y - 1.0, 2.0 * rand.z - 1.0, 1.0);",
                 "}"
             ];
 
@@ -719,12 +776,13 @@ define(['utilities'], function (util){
                 "void main() {",
 
                     "vec4 rand = texture2D(u_rand, v_texCoord);",
-                    "vec2 x = rand.zw;",
-                    "vec4 s = texture2D(u_entropy, x);",
 
-                    "x = 0.99 * x + 0.01 * s.zw;",
+                    "vec4 s = texture2D(u_entropy, vec2(rand.b, rand.a));",
 
-                    "gl_FragColor = vec4(s.xy, 4.0 * x * (1.0 - x));",
+                    //"x = 0.75 * x + 0.25 * s.zw;",
+
+                    //"gl_FragColor = vec4(s.xy, 4.0 * x * (1.0 - x));",
+                    "gl_FragColor = vec4(s.r, s.g, rand.b, rand.a);",
 
                 "}"
             ];
@@ -989,6 +1047,27 @@ define(['utilities'], function (util){
         texture_coordinates.bind(programNormalizeMoments01, "a_texCoord");
 
         // ---------------------------------------------------------------------
+        // program for normalizing average of moment
+        //
+        var moments01_avgA = webgl.addFrameBuffer(spec.nr, spec.nz, true);
+        var moments01_avgB = webgl.addFrameBuffer(spec.nr, spec.nz, true);
+
+        // ---------------------------------------------------------------------
+        var programAvgMoments = webgl.linkProgram({
+            vertexShaderSource : precompute_vert(),
+            fragmentShaderSource : avg_frag()
+        });
+
+        moments01_norm.texture.bind(programAvgMoments, "u_next");
+        moments01_avgB.texture.bind(programAvgMoments, "u_avg");
+        programAvgMoments.setUniformFloat("u_ratio", 0.05);
+
+        // triangle vertices
+        vertex_positions.bind(programAvgMoments, "a_position");
+        // texture coordinets for vertices
+        texture_coordinates.bind(programAvgMoments, "a_texCoord");
+
+        // ---------------------------------------------------------------------
         // program for rendering density as a color
         //
         var programDensity = webgl.linkProgram({
@@ -1013,7 +1092,7 @@ define(['utilities'], function (util){
             })()
         });
 
-        moments01_norm.texture.bind(programDensity, "u_moments01");
+        moments01_avgA.texture.bind(programDensity, "u_moments01");
 
         // triangle vertices
         vertex_positions.bind(programDensity, "a_position");
@@ -1260,6 +1339,36 @@ define(['utilities'], function (util){
             });
         };
 
+        out.addSpindleCuspPlasmaField = function(r, B_c) {
+
+            var I = 5000000;
+
+            out.addCurrentLoop(0.8 * r, 2.0 * r, -I);
+            out.addCurrentLoop(0.8 * r, 0.0, I);
+
+
+            var p0 = 0.75 * I * (1/ 998);
+
+
+            var a = 0.25;
+            var R =  r * Math.sqrt(1 + a * a);
+
+            var theta = Math.asin(a / R) + Math.PI;
+            var arc = 0.5 * Math.PI - 2.0 * Math.asin(a / R);
+
+            for(i = 1; i < 1000; i++) {
+                var phi = i * arc / 1000 + theta;
+
+                var px = i / 1000;
+
+                var I_phi = p0 * (1.0 + 0.1/ px + Math.exp(-px * 6.0) + 0.2 * Math.exp(-px * 4.0));
+
+                out.addCurrentLoop(R * Math.cos(phi) + r, R * Math.sin(phi) + 2.0 * r, I_phi);
+                out.addCurrentLoop(R * Math.cos(-phi) + r, R * Math.sin(-phi), -I_phi);
+            }
+
+        };
+
         out.addCurrentZ = function(I) {
 
             programCurrentZ.setUniformFloat("u_I", I);
@@ -1364,17 +1473,26 @@ define(['utilities'], function (util){
                 target : moments01_norm
             });
 
+            programAvgMoments.draw({
+                triangles : 6,
+                target : moments01_avgA
+            });
+
+            moments01_avgA.texture.bind(programSet, "u_value");
+            programSet.draw({
+                triangles : 6,
+                target : moments01_avgB
+            });
 
             programDensity.draw({
                 triangles : 6
             });
 
-/*
-            moments01_norm.texture.bind(programSet, "u_value");
-            programSet.draw({
-                triangles : 6
+            programBMag.draw({
+                triangles : 6,
+                blend : ['ONE', 'ONE']
             });
-*/
+
         };
 
         return out;
