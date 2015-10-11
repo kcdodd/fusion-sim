@@ -31,6 +31,10 @@ define([
         '$interval',
         function($scope, $interval){
 
+
+            $scope.run = false;
+            $scope.fps = 0;
+
             var nparticles = 160000;
 
             var spec = {
@@ -38,7 +42,7 @@ define([
                 height : 2,
                 nr : 400,
                 nz : 800,
-                dt : 2E-8,
+                dt : 2E-9,
                 nparticles : 400,
                 particle_mass : 1.67e-27, //kg : proton
                 particle_charge : 1.602e-19 // C
@@ -86,7 +90,7 @@ define([
             // particles
             for(i = 0; i < nparticles; i++) {
                 init_position[i] = [0.2 * Math.random() + 0.0, 0, 0.2*Math.random() + 0.9];
-                init_velocity[i] = [0.001 * (Math.random()-0.5), 0.001 * (Math.random()-0.5), 0.001 * (Math.random()-0.5)];
+                init_velocity[i] = [0.002 * (Math.random()-0.5), 0.002 * (Math.random()-0.5), 0.002 * (Math.random()-0.5)];
             }
 
             simulation.set({
@@ -96,7 +100,8 @@ define([
                 source_pdf : source
             });
 
-
+            simulation.addCurrentLoop(0.8, 2.0, -10000000);
+            simulation.addCurrentLoop(0.8, 0.0, 10000000);
 
             //simulation.addCurrentLoop(0.5, 1.0, 10000000);
             //simulation.addCurrentZ(5000000);
@@ -104,7 +109,7 @@ define([
 
             //simulation.addBTheta(0.01);
 
-            simulation.addSpindleCuspPlasmaField(1.0, 0.5);
+            //simulation.addSpindleCuspPlasmaField(1.0, 0.5);
 
             simulation.precalc();
 
@@ -113,9 +118,6 @@ define([
 
             simulation.density();
             plot_ctx.drawImage(simulation.canvas, 0, 0);
-
-            $scope.run = false;
-            $scope.fps = 0;
 
             console.log("initialized");
 
@@ -156,7 +158,10 @@ define([
 
                         requestAnimationFrame(step);
                     }else{
-                        $scope.fps = 0;
+                        $scope.$apply(function(){
+                            $scope.fps = 0;
+                        });
+
                     }
                 };
 

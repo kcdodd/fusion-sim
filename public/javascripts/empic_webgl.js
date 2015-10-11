@@ -36,7 +36,8 @@ define(['utilities'], function (util){
             dt : 'number',
             nparticles : 'number',
             particle_mass : 'number',
-            particle_charge : 'number'
+            particle_charge : 'number',
+
         });
 
         // physical quantities
@@ -109,23 +110,35 @@ define(['utilities'], function (util){
         var nparticles_w = spec.nparticles;
         var nparticles = nparticles_h * nparticles_w;
 
+        var field_params = {
+            width : spec.nr,
+            height : spec.nz,
+            useFloat : true
+        };
+
+        var particle_params = {
+            width: nparticles_w,
+            height: nparticles_h,
+            useFloat: true
+        };
+
         var position_arr = new Float32Array(4 * nparticles);
 
-        var position_tex = webgl.addTextureArray(
-            nparticles_w,
-            nparticles_h,
-            position_arr,
-            true
-        );
+        var position_tex = webgl.addTextureArray({
+            width: nparticles_w,
+            height: nparticles_h,
+            array: position_arr,
+            useFloat: true
+        });
 
         var velocity_arr = new Float32Array(4 * nparticles);
 
-        var velocity_tex = webgl.addTextureArray(
-            nparticles_w,
-            nparticles_h,
-            velocity_arr,
-            true
-        );
+        var velocity_tex = webgl.addTextureArray({
+            width: nparticles_w,
+            height: nparticles_h,
+            array: velocity_arr,
+            useFloat: true
+        });
 
         // source of entropy for pseudo-random numbers
         var n_entropy = 1024;
@@ -143,12 +156,12 @@ define(['utilities'], function (util){
             entropy_arr[4 * i + 3] = random_bytes[3] / 0xFFFFFFFF;
         }
 
-        var entropy_tex = webgl.addTextureArray(
-            n_entropy,
-            n_entropy,
-            entropy_arr,
-            true
-        );
+        var entropy_tex = webgl.addTextureArray({
+            width : n_entropy,
+            height : n_entropy,
+            array : entropy_arr,
+            useFloat : true
+        });
 
         // time dependant random numbers per particle
         var rand_arr = new Float32Array(4 * nparticles);
@@ -161,69 +174,73 @@ define(['utilities'], function (util){
             rand_arr[4 * i + 3] = Math.random();
         }
 
-        var rand_tex = webgl.addTextureArray(
-            nparticles_w,
-            nparticles_h,
-            rand_arr,
-            true
-        );
+        var rand_tex = webgl.addTextureArray({
+            width : nparticles_w,
+            height : nparticles_h,
+            array : rand_arr,
+            useFloat : true
+        });
 
         //
         // The electromagnetic fields
         //
 
-        var E = webgl.addFrameBuffer(spec.nr, spec.nz, true);
+        var E = webgl.addFrameBuffer(field_params);
 
         var E_arr = new Float32Array(4 * spec.nr * spec.nz);
 
-        var E_tex = webgl.addTextureArray(
-            spec.nr,
-            spec.nz,
-            E_arr,
-            true
-        );
+        var E_tex = webgl.addTextureArray({
+            width: spec.nr,
+            height: spec.nz,
+            array: E_arr,
+            useFloat : true
+        });
 
-        var B = webgl.addFrameBuffer(spec.nr, spec.nz, true);
+        var B = webgl.addFrameBuffer(field_params);
 
         var B_arr = new Float32Array(4 * spec.nr * spec.nz);
 
-        var B_tex = webgl.addTextureArray(
-            spec.nr,
-            spec.nz,
-            B_arr,
-            true
-        );
+        var B_tex = webgl.addTextureArray({
+            width: spec.nr,
+            height: spec.nz,
+            array: B_arr,
+            useFloat : true
+        });
 
 
         //
         // Mask for determining if particle is lost
         //
 
-        var sink_mask = webgl.addFrameBuffer(spec.nr, spec.nz, true);
+        var sink_mask = webgl.addFrameBuffer(field_params);
 
         var sink_mask_arr = new Float32Array(4 * spec.nr * spec.nz);
 
-        var sink_mask_tex = webgl.addTextureArray(
-            spec.nr,
-            spec.nz,
-            sink_mask_arr,
-            true
-        );
+        var sink_mask_tex = webgl.addTextureArray({
+            width: spec.nr,
+            height: spec.nz,
+            array: sink_mask_arr,
+            useFloat: true
+        });
 
         //
         // Inverse cdf in 2D for generating particle positions
         //
 
-        var inv_cdf = webgl.addFrameBuffer(512, 512, true);
+        var inv_cdf = webgl.addFrameBuffer({
+            width: 512,
+            height: 512,
+            useFloat: true
+        });
 
         var inv_cdf_arr = new Float32Array(4 * 512 * 512);
 
-        var inv_cdf_tex = webgl.addTextureArray(
-            512,
-            512,
-            inv_cdf_arr,
-            true
-        );
+        var inv_cdf_tex = webgl.addTextureArray({
+            width: 512,
+            height: 512,
+            array: inv_cdf_arr,
+            useFloat : true
+        });
 
         //
         // General shader to compute a texture frame buffer.
@@ -266,13 +283,48 @@ define(['utilities'], function (util){
             return src_arr.join('\n');
         }; // avg_frag
 
+        var mv_product_frag = function() {
+            var src_arr = [
+                "precision mediump float;",
+
+                "uniform sampler2D u_M;",
+                "uniform sampler2D u_V;",
+                // the texCoords passed in from the vertex shader.
+                "varying vec2 v_texCoord;",
+
+                "void main() {",
+
+                    "gl_FragColor = texture2D(u_M, v_texCoord) * texture2D(u_V, vec2(0.5, v_texCoord.x));",
+                "}"
+            ];
+
+            return src_arr.join('\n');
+        }; // mv_product_frag
+
+        var sum_x_frag = function(num_x) {
+            var src_arr = [
+                "precision mediump float;",
+
+                "uniform sampler2D u_M;",
+                // the texCoords passed in from the vertex shader.
+                "varying vec2 v_texCoord;",
+
+                "void main() {",
+                    "vec2 offset = vec2(" + N(0.5/num_x) + ", 0.0)",
+                    "gl_FragColor = texture2D(u_M, v_texCoord + offset) + texture2D(u_M, v_texCoord - offset);",
+                "}"
+            ];
+
+            return src_arr.join('\n');
+        }; // sum_x_frag
 
         //
         // Program to calculate magnetic field from a current loop.
         //
 
-        var B_loop_half = webgl.addFrameBuffer(spec.nr, spec.nz, true);
-        var B_loop_tenth = webgl.addFrameBuffer(spec.nr, spec.nz, true);
+        var B_loop_half = webgl.addFrameBuffer(field_params);
+
+        var B_loop_tenth = webgl.addFrameBuffer(field_params);
 
         // ---------------------------------------------------------------------
         var programCurrentLoopShape = webgl.linkProgram({
@@ -293,12 +345,14 @@ define(['utilities'], function (util){
                         "float Bz = 0.0;",
                         "float r = 0.0;",
                         "float factor = 0.0;",
+                        "float cosine = 0.0;",
                         "float constant = u_R * 0.001 * 1.25663706e-6 / (4.0 * 3.14159265359);",
                         "for(float i = 0.0; i < 1000.0; i++){",
-                            "r = sqrt(u_R * u_R + v_texCoord.x * v_texCoord.x + v_texCoord.y * v_texCoord.y - 2.0 * v_texCoord.x * u_R * cos(3.14159265359 * i / 999.0));",
-                            "factor = (r > 0.0) ? constant * (1.0 - exp(- r * r / (u_a * u_a))) / (r * r * r) : 0.0;",
-                            "Bx += v_texCoord.y * factor * cos(3.14159265359 * i / 999.0);",
-                            "Bz += factor * (u_R - v_texCoord.x * cos(3.14159265359 * i / 999.0));",
+                            "cosine = cos(3.14159265359 * (i + 0.5) / 1000.0);",
+                            "r = sqrt(u_R * u_R + v_texCoord.x * v_texCoord.x + v_texCoord.y * v_texCoord.y - 2.0 * v_texCoord.x * u_R * cosine);",
+                            "factor = (r > 0.0) ? constant * (1.0) / (r * r * r) : 0.0;",
+                            "Bx += v_texCoord.y * factor * cosine;",
+                            "Bz += factor * (u_R - v_texCoord.x * cosine);",
                         "}",
                         "gl_FragColor = vec4(Bx, 0.0, Bz, 1.0);",
 
@@ -314,16 +368,22 @@ define(['utilities'], function (util){
         // texture coordinets for vertices
         texture_coordinates.bind(programCurrentLoopShape, "a_texCoord");
 
-        programCurrentLoopShape.setUniformFloat("u_a", 50.0 / spec.nr);
+        //programCurrentLoopShape.setUniformFloat("u_a", 50.0 / spec.nr);
 
         programCurrentLoopShape.setUniformFloat("u_R", 0.5);
 
-        programCurrentLoopShape.drawTriangles(0, 6, B_loop_half);
+        programCurrentLoopShape.draw({
+            triangles : 6,
+            target : B_loop_half
+        });
+
 
         programCurrentLoopShape.setUniformFloat("u_R", 0.1);
 
-        programCurrentLoopShape.drawTriangles(0, 6, B_loop_tenth);
-
+        programCurrentLoopShape.draw({
+            triangles : 6,
+            target : B_loop_tenth
+        });
 
         // ---------------------------------------------------------------------
         var programCurrentLoop = webgl.linkProgram({
@@ -360,8 +420,8 @@ define(['utilities'], function (util){
             })()
         });
 
-        B_loop_half.texture.bind(programCurrentLoop, "u_shape_half");
-        B_loop_tenth.texture.bind(programCurrentLoop, "u_shape_tenth");
+        B_loop_half.bind(programCurrentLoop, "u_shape_half");
+        B_loop_tenth.bind(programCurrentLoop, "u_shape_tenth");
 
 
         // ---------------------------------------------------------------------
@@ -459,16 +519,16 @@ define(['utilities'], function (util){
         vertex_positions.bind(programBMag, "a_position");
         // texture coordinets for vertices
         texture_coordinates.bind(programBMag, "a_texCoord");
-        B.texture.bind(programBMag, "u_B");
+        B.bind(programBMag, "u_B");
 
         //
         // programs for pre-calculations of the fields
         //
 
-        var R1 = webgl.addFrameBuffer(spec.nr, spec.nz, true);
-        var R2 = webgl.addFrameBuffer(spec.nr, spec.nz, true);
-        var R3 = webgl.addFrameBuffer(spec.nr, spec.nz, true);
-        var A = webgl.addFrameBuffer(spec.nr, spec.nz, true);
+        var R1 = webgl.addFrameBuffer(field_params);
+        var R2 = webgl.addFrameBuffer(field_params);
+        var R3 = webgl.addFrameBuffer(field_params);
+        var A = webgl.addFrameBuffer(field_params);
 
 
         // ---------------------------------------------------------------------
@@ -510,7 +570,7 @@ define(['utilities'], function (util){
         // texture coordinets for vertices
         texture_coordinates.bind(programPre1, "a_texCoord");
 
-        B.texture.bind(programPre1, "u_B");
+        B.bind(programPre1, "u_B");
         programPre1.setUniformFloat("u_h", h);
 
         // ---------------------------------------------------------------------
@@ -552,7 +612,7 @@ define(['utilities'], function (util){
         // texture coordinets for vertices
         texture_coordinates.bind(programPre2, "a_texCoord");
 
-        B.texture.bind(programPre2, "u_B");
+        B.bind(programPre2, "u_B");
         programPre2.setUniformFloat("u_h", h);
 
 
@@ -595,7 +655,7 @@ define(['utilities'], function (util){
         // texture coordinets for vertices
         texture_coordinates.bind(programPre3, "a_texCoord");
 
-        B.texture.bind(programPre3, "u_B");
+        B.bind(programPre3, "u_B");
         programPre3.setUniformFloat("u_h", h);
 
 
@@ -635,8 +695,8 @@ define(['utilities'], function (util){
         // texture coordinets for vertices
         texture_coordinates.bind(programPreA, "a_texCoord");
 
-        E.texture.bind(programPreA, "u_E");
-        B.texture.bind(programPreA, "u_B");
+        E.bind(programPreA, "u_E");
+        B.bind(programPreA, "u_B");
         programPreA.setUniformFloat("u_h", h);
 
 
@@ -644,13 +704,13 @@ define(['utilities'], function (util){
         // step programs in leap-frog
         //
 
-        var position_A = webgl.addFrameBuffer(nparticles_w, nparticles_h, true);
-        var velocity_A = webgl.addFrameBuffer(nparticles_w, nparticles_h, true);
-        var position_B = webgl.addFrameBuffer(nparticles_w, nparticles_h, true);
-        var velocity_B = webgl.addFrameBuffer(nparticles_w, nparticles_h, true);
+        var position_A = webgl.addFrameBuffer(particle_params);
+        var velocity_A = webgl.addFrameBuffer(particle_params);
+        var position_B = webgl.addFrameBuffer(particle_params);
+        var velocity_B = webgl.addFrameBuffer(particle_params);
 
-        var rand_A = webgl.addFrameBuffer(nparticles_w, nparticles_h, true);
-        var rand_B = webgl.addFrameBuffer(nparticles_w, nparticles_h, true);
+        var rand_A = webgl.addFrameBuffer(particle_params);
+        var rand_B = webgl.addFrameBuffer(particle_params);
 
         // ---------------------------------------------------------------------
         var step_vert = function() {
@@ -777,12 +837,12 @@ define(['utilities'], function (util){
 
                     "vec4 rand = texture2D(u_rand, v_texCoord);",
 
-                    "vec4 s = texture2D(u_entropy, vec2(rand.b, rand.a));",
+                    "vec4 s = texture2D(u_entropy, v_texCoord);",
 
                     //"x = 0.75 * x + 0.25 * s.zw;",
 
                     //"gl_FragColor = vec4(s.xy, 4.0 * x * (1.0 - x));",
-                    "gl_FragColor = vec4(s.r, s.g, rand.b, rand.a);",
+                    "gl_FragColor = vec4(s.xyz, 1.0);",
 
                 "}"
             ];
@@ -804,7 +864,7 @@ define(['utilities'], function (util){
         texture_coordinates.bind(programStepRandB, "a_texCoord");
 
         entropy_tex.bind(programStepRandB, "u_entropy");
-        rand_A.texture.bind(programStepRandB, "u_rand");
+        rand_A.bind(programStepRandB, "u_rand");
 
         // ---------------------------------------------------------------------
         // computes value of velocity_B
@@ -818,13 +878,13 @@ define(['utilities'], function (util){
         // texture coordinets for vertices
         texture_coordinates.bind(programStepVelocityB, "a_texCoord");
 
-        position_A.texture.bind(programStepVelocityB, "u_position");
-        velocity_A.texture.bind(programStepVelocityB, "u_velocity");
-        rand_A.texture.bind(programStepVelocityB, "u_rand");
-        R1.texture.bind(programStepVelocityB, "u_R_1");
-        R2.texture.bind(programStepVelocityB, "u_R_2");
-        R3.texture.bind(programStepVelocityB, "u_R_3");
-        A.texture.bind(programStepVelocityB, "u_A");
+        position_A.bind(programStepVelocityB, "u_position");
+        velocity_A.bind(programStepVelocityB, "u_velocity");
+        rand_A.bind(programStepVelocityB, "u_rand");
+        R1.bind(programStepVelocityB, "u_R_1");
+        R2.bind(programStepVelocityB, "u_R_2");
+        R3.bind(programStepVelocityB, "u_R_3");
+        A.bind(programStepVelocityB, "u_A");
 
         // ---------------------------------------------------------------------
         // computes value of position_B
@@ -840,12 +900,12 @@ define(['utilities'], function (util){
 
         programStepPositionB.setUniformFloat("u_step_factor", spec.dt * speed_of_light);
 
-        position_A.texture.bind(programStepPositionB, "u_position");
-        velocity_B.texture.bind(programStepPositionB, "u_velocity");
-        rand_A.texture.bind(programStepPositionB, "u_rand");
+        position_A.bind(programStepPositionB, "u_position");
+        velocity_B.bind(programStepPositionB, "u_velocity");
+        rand_A.bind(programStepPositionB, "u_rand");
 
-        sink_mask.texture.bind(programStepPositionB, "u_sink");
-        inv_cdf.texture.bind(programStepPositionB, "u_inv_cdf");
+        sink_mask.bind(programStepPositionB, "u_sink");
+        inv_cdf.bind(programStepPositionB, "u_inv_cdf");
 
         // ---------------------------------------------------------------------
         // computes value of rand_A
@@ -860,7 +920,7 @@ define(['utilities'], function (util){
         texture_coordinates.bind(programStepRandA, "a_texCoord");
 
         entropy_tex.bind(programStepRandB, "u_entropy");
-        rand_B.texture.bind(programStepRandA, "u_rand");
+        rand_B.bind(programStepRandA, "u_rand");
 
         // ---------------------------------------------------------------------
         // computes value of velocity_A
@@ -874,14 +934,14 @@ define(['utilities'], function (util){
         // texture coordinets for vertices
         texture_coordinates.bind(programStepVelocityA, "a_texCoord");
 
-        position_B.texture.bind(programStepVelocityA, "u_position");
-        velocity_B.texture.bind(programStepVelocityA, "u_velocity");
-        rand_B.texture.bind(programStepVelocityA, "u_rand");
+        position_B.bind(programStepVelocityA, "u_position");
+        velocity_B.bind(programStepVelocityA, "u_velocity");
+        rand_B.bind(programStepVelocityA, "u_rand");
 
-        R1.texture.bind(programStepVelocityA, "u_R_1");
-        R2.texture.bind(programStepVelocityA, "u_R_2");
-        R3.texture.bind(programStepVelocityA, "u_R_3");
-        A.texture.bind(programStepVelocityA, "u_A");
+        R1.bind(programStepVelocityA, "u_R_1");
+        R2.bind(programStepVelocityA, "u_R_2");
+        R3.bind(programStepVelocityA, "u_R_3");
+        A.bind(programStepVelocityA, "u_A");
 
         // ---------------------------------------------------------------------
         // computes value of position_A
@@ -897,17 +957,17 @@ define(['utilities'], function (util){
 
         programStepPositionA.setUniformFloat("u_step_factor", spec.dt * speed_of_light);
 
-        position_B.texture.bind(programStepPositionA, "u_position");
-        velocity_A.texture.bind(programStepPositionA, "u_velocity");
-        rand_B.texture.bind(programStepPositionA, "u_rand");
+        position_B.bind(programStepPositionA, "u_position");
+        velocity_A.bind(programStepPositionA, "u_velocity");
+        rand_B.bind(programStepPositionA, "u_rand");
 
-        sink_mask.texture.bind(programStepPositionA, "u_sink");
-        inv_cdf.texture.bind(programStepPositionA, "u_inv_cdf");
+        sink_mask.bind(programStepPositionA, "u_sink");
+        inv_cdf.bind(programStepPositionA, "u_inv_cdf");
 
         // ---------------------------------------------------------------------
         // program for rendering particles into a density and velocity function
 
-        var moments01 = webgl.addFrameBuffer(spec.nr, spec.nz, true);
+        var moments01 = webgl.addFrameBuffer(field_params);
 
         var programMoments01 = webgl.linkProgram({
             vertexShaderSource : (function() {
@@ -974,8 +1034,8 @@ define(['utilities'], function (util){
         particles_texcoord.bind(programMoments01, "a_particleTexCoord");
 
 
-        position_A.texture.bind(programMoments01, "u_position");
-        velocity_A.texture.bind(programMoments01, "u_velocity");
+        position_A.bind(programMoments01, "u_position");
+        velocity_A.bind(programMoments01, "u_velocity");
 
 
 
@@ -1003,12 +1063,12 @@ define(['utilities'], function (util){
             }
         }
 
-        var shape_tex = webgl.addTextureArray(
-            nshape,
-            nshape,
-            shape_arr,
-            true
-        );
+        var shape_tex = webgl.addTextureArray({
+            width: nshape,
+            height: nshape,
+            array: shape_arr,
+            useFloat: true
+        });
 
         shape_tex.bind(programMoments01, "u_shape");
         programMoments01.setUniformFloat("u_pointsize", nshape);
@@ -1016,7 +1076,7 @@ define(['utilities'], function (util){
         // ---------------------------------------------------------------------
         // program for normalizing average of moment
         //
-        var moments01_norm = webgl.addFrameBuffer(spec.nr, spec.nz, true);
+        var moments01_norm = webgl.addFrameBuffer(field_params);
 
         var programNormalizeMoments01 = webgl.linkProgram({
             vertexShaderSource : precompute_vert(),
@@ -1040,7 +1100,7 @@ define(['utilities'], function (util){
             })()
         });
 
-        moments01.texture.bind(programNormalizeMoments01, "u_moments01");
+        moments01.bind(programNormalizeMoments01, "u_moments01");
 
         // triangle vertices
         vertex_positions.bind(programNormalizeMoments01, "a_position");
@@ -1050,8 +1110,8 @@ define(['utilities'], function (util){
         // ---------------------------------------------------------------------
         // program for normalizing average of moment
         //
-        var moments01_avgA = webgl.addFrameBuffer(spec.nr, spec.nz, true);
-        var moments01_avgB = webgl.addFrameBuffer(spec.nr, spec.nz, true);
+        var moments01_avgA = webgl.addFrameBuffer(field_params);
+        var moments01_avgB = webgl.addFrameBuffer(field_params);
 
         // ---------------------------------------------------------------------
         var programAvgMoments = webgl.linkProgram({
@@ -1059,8 +1119,8 @@ define(['utilities'], function (util){
             fragmentShaderSource : avg_frag()
         });
 
-        moments01_norm.texture.bind(programAvgMoments, "u_next");
-        moments01_avgB.texture.bind(programAvgMoments, "u_avg");
+        moments01_norm.bind(programAvgMoments, "u_next");
+        moments01_avgB.bind(programAvgMoments, "u_avg");
         programAvgMoments.setUniformFloat("u_ratio", 0.01);
 
         // triangle vertices
@@ -1085,7 +1145,8 @@ define(['utilities'], function (util){
                         "vec4 M01 = texture2D(u_moments01, v_texCoord);",
                         "float v = length(M01.xyz);",
                         "float va = v > 0.0 ? M01.y / v : 0.0;",
-                        "gl_FragColor = vec4(M01.a * (1.0 + min(0.0, va)), M01.a * (1.0 - abs(va)), M01.a * (1.0 - max(0.0, va)), 1.0);",
+                        //"gl_FragColor = vec4(M01.a * (1.0 + min(0.0, va)), M01.a * (1.0 - abs(va)), M01.a * (1.0 - max(0.0, va)), 1.0);",
+                        "gl_FragColor = 0.5 * vec4(M01.a, M01.a, M01.a, 1.0);",
                     "}"
                 ];
 
@@ -1093,7 +1154,8 @@ define(['utilities'], function (util){
             })()
         });
 
-        moments01_avgA.texture.bind(programDensity, "u_moments01");
+        moments01_avgA.bind(programDensity, "u_moments01");
+        //moments01_norm.bind(programDensity, "u_moments01");
 
         // triangle vertices
         vertex_positions.bind(programDensity, "a_position");
@@ -1217,8 +1279,15 @@ define(['utilities'], function (util){
                 // send values to card
                 velocity_tex.update();
                 velocity_tex.bind(programSet, "u_value");
-                programSet.drawTriangles(0, 6, velocity_A);
-                programSet.drawTriangles(0, 6, velocity_B);
+
+                programSet.draw({
+                    triangles : 6,
+                    target : velocity_A
+                });
+                programSet.draw({
+                    triangles : 6,
+                    target : velocity_B
+                });
             }
 
             if (value.sink_mask) {
@@ -1340,18 +1409,18 @@ define(['utilities'], function (util){
             });
         };
 
-        out.addSpindleCuspPlasmaField = function(r, B_c) {
+        out.addSpindleCuspPlasmaField = function(r, B_c, beta_c) {
 
-            var I = 5000000;
+            var I = -5000000;
 
             out.addCurrentLoop(0.8 * r, 2.0 * r, -I);
             out.addCurrentLoop(0.8 * r, 0.0, I);
 
 
-            var p0 = 0.75 * I * (1/ 998);
+            var p0 = 0.65 * I * (1/ 998);
 
 
-            var a = 0.25;
+            var a = 0.4;
             var R =  r * Math.sqrt(1 + a * a);
 
             var theta = Math.asin(a / R) + Math.PI;
@@ -1362,7 +1431,8 @@ define(['utilities'], function (util){
 
                 var px = i / 1000;
 
-                var I_phi = p0 * (1.0 + 0.1/ px + Math.exp(-px * 6.0) + 0.2 * Math.exp(-px * 4.0));
+                //var I_phi = p0 * (1.0 + 0.1/ px + Math.exp(-px * 6.0) + 0.2 * Math.exp(-px * 4.0));
+                var I_phi = p0 * (1.0 + 5 * Math.exp(-px * 10));
 
                 out.addCurrentLoop(R * Math.cos(phi) + r, R * Math.sin(phi) + 2.0 * r, I_phi);
                 out.addCurrentLoop(R * Math.cos(-phi) + r, R * Math.sin(-phi), -I_phi);
@@ -1430,9 +1500,10 @@ define(['utilities'], function (util){
 
             programStepRandB.draw({
                 triangles : 6,
-                target : rand_B
+                target : rand_B,
+                clear_color : [0,0,0,0],
             });
-
+/*
             programStepVelocityB.draw({
                 triangles : 6,
                 target : velocity_B
@@ -1442,12 +1513,13 @@ define(['utilities'], function (util){
                 triangles : 6,
                 target : position_B
             });
-
+*/
             programStepRandA.draw({
                 triangles : 6,
-                target : rand_A
+                target : rand_A,
+                clear_color : [0,0,0,0],
             });
-
+/*
             programStepVelocityA.draw({
                 triangles : 6,
                 target : velocity_A
@@ -1457,13 +1529,13 @@ define(['utilities'], function (util){
                 triangles : 6,
                 target : position_A
             });
-
+*/
         };
 
         out.density = function() {
 
 
-
+/*
             programMoments01.draw({
                 points : nparticles,
                 target : moments01,
@@ -1481,7 +1553,7 @@ define(['utilities'], function (util){
                 target : moments01_avgA
             });
 
-            moments01_avgA.texture.bind(programSet, "u_value");
+            moments01_avgA.bind(programSet, "u_value");
             programSet.draw({
                 triangles : 6,
                 target : moments01_avgB
@@ -1495,9 +1567,17 @@ define(['utilities'], function (util){
                 triangles : 6,
                 blend : ['SRC_ALPHA', 'ONE']
             });
+*/
+            rand_A.bind(programSet, "u_value");
+            programStepRandA.draw({
+                triangles : 6,
+                target : rand_A,
+                clear_color : [0,0,0,0],
+            });
 
-
-
+            programSet.draw({
+                triangles : 6
+            });
         };
 
         return out;

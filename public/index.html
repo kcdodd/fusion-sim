@@ -9,6 +9,7 @@
 <body ng-controller="MainCtrl">
 
     <div ng-controller="simulation"  class="inline box function">
+
         <div class="block">Click plot to start/stop simulation: {{fps}} fps</div>
         <canvas width="400" height="800" id="plot" ng-click="run ? stop() : start()" class="block"></canvas>
     </div>

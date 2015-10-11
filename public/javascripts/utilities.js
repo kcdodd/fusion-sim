@@ -252,7 +252,7 @@ define(function (){
             // lead to undefined behaviour.
             var prog = {
                 program : program,
-                bindings : []
+                bindings : [] // used to remember what vertex data to use with this program
             };
 
             /**
@@ -306,85 +306,6 @@ define(function (){
                 gl.useProgram(null);
             };
 
-            prog.drawTriangles = function(first, count, target, resolution_name) {
-                gl.useProgram(program);
-
-
-                for(var i = 0; i < prog.bindings.length; i++) {
-                    prog.bindings[i]();
-                }
-
-                if (target) {
-                    // make this the framebuffer we are rendering to.
-                    gl.bindFramebuffer(gl.FRAMEBUFFER, target.frameBuffer);
-
-                    if (resolution_name) {
-                        // Tell the shader the resolution of the framebuffer.
-                        var resolutionLocation = gl.getUniformLocation(program, resolution_name);
-                        gl.uniform2f(resolutionLocation, target.width, target.height);
-                    }
-
-                    // Tell webgl the viewport setting needed for framebuffer.
-                    gl.viewport(0, 0, target.width, target.height);
-                }else{
-                    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-
-                    if (resolution_name) {
-                        // Tell the shader the resolution of the framebuffer.
-                        var resolutionLocation = gl.getUniformLocation(program, resolution_name);
-                        gl.uniform2f(resolutionLocation, canvas.width, canvas.height);
-                    }
-
-                    // Tell webgl the viewport setting needed for framebuffer.
-                    gl.viewport(0, 0, canvas.width, canvas.height);
-                }
-
-                gl.drawArrays(gl.TRIANGLES, first, count);
-
-                // revert back to what was specified as program to use for drawing
-                gl.useProgram(null);
-            };
-
-
-            prog.drawPoints = function(first, count, target, resolution_name) {
-                gl.useProgram(program);
-
-
-                for(var i = 0; i < prog.bindings.length; i++) {
-                    prog.bindings[i]();
-                }
-
-                if (target) {
-                    // make this the framebuffer we are rendering to.
-                    gl.bindFramebuffer(gl.FRAMEBUFFER, target.frameBuffer);
-
-                    if (resolution_name) {
-                        // Tell the shader the resolution of the framebuffer.
-                        var resolutionLocation = gl.getUniformLocation(program, resolution_name);
-                        gl.uniform2f(resolutionLocation, target.width, target.height);
-                    }
-
-                    // Tell webgl the viewport setting needed for framebuffer.
-                    gl.viewport(0, 0, target.width, target.height);
-                }else{
-                    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-
-                    if (resolution_name) {
-                        // Tell the shader the resolution of the framebuffer.
-                        var resolutionLocation = gl.getUniformLocation(program, resolution_name);
-                        gl.uniform2f(resolutionLocation, canvas.width, canvas.height);
-                    }
-
-                    // Tell webgl the viewport setting needed for framebuffer.
-                    gl.viewport(0, 0, canvas.width, canvas.height);
-                }
-
-                gl.drawArrays(gl.POINTS, first, count);
-
-                // revert back to what was specified as program to use for drawing
-                gl.useProgram(null);
-            };
-
             /**
                 target - render to a framebuffer instead of canvas
                 clear_color - clears framebuffer to a specified color before rendering
@@ -395,6 +316,7 @@ define(function (){
 
                 gl.useProgram(program);
 
+                // bind vertex data
                 for(var i = 0; i < prog.bindings.length; i++) {
                     prog.bindings[i]();
                 }
@@ -562,7 +484,12 @@ define(function (){
             @param {number} height - height of texture in pixels
             @param array - data to assign to texture unit
         */
-        out.addTextureArray = function(width, height, array, useFloat) {
+        out.addTextureArray = function(params) {
+
+            var array = null;
+            if (typeof params.array !== 'undefined') {
+                array = params.array;
+            }
 
             // use the next available texture unit to store the array
             gl.activeTexture(gl.TEXTURE0 + textures.length);
@@ -576,19 +503,19 @@ define(function (){
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
 
 
-            if (useFloat) {
-                gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, width, height, 0, gl.RGBA, gl.FLOAT, array);
+            if (params.useFloat) {
+                gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, params.width, params.height, 0, gl.RGBA, gl.FLOAT, array);
             }else{
-                gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, array);
+                gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, params.width, params.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, array);
             }
 
             // object reference to texture created
             var tex = {
                 index : textures.length,
                 texture : texture,
-                width : width,
-                height : height,
-                array : array
+                width : params.width,
+                height : params.height,
+                array : params.array
             };
 
             /**
@@ -623,10 +550,10 @@ define(function (){
                 gl.activeTexture(gl.TEXTURE0 + tex.index);
                 gl.bindTexture(gl.TEXTURE_2D, tex.texture);
 
-                if (useFloat) {
-                    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, width, height, 0, gl.RGBA, gl.FLOAT, array);
+                if (params.useFloat) {
+                    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, params.width, params.height, 0, gl.RGBA, gl.FLOAT, array);
                 }else{
-                    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, array);
+                    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, params.width, params.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, array);
                 }
             };
 
@@ -706,11 +633,9 @@ define(function (){
             used to bind the output of the program it is bound to.
 
         */
-        out.addFrameBuffer = function(width, height, useFloat) {
+        out.addFrameBuffer = function(params) {
 
-            var texture = out.addTextureArray(width, height, null, useFloat);
-
-            //out.gl.bindTexture(gl.TEXTURE_2D, texture);
+            var texture = out.addTextureArray(params);
 
             var fbo = gl.createFramebuffer();
 
@@ -731,40 +656,30 @@ define(function (){
                 index : framebuffers.length,
                 frameBuffer: fbo,
                 texture : texture,
-                width : width,
-                height : height,
+                width : params.width,
+                height : params.height,
                 webgl : out
             };
 
             /**
-                Use this framebuffer as the output of the program.
+                Use this framebuffer (it's texture) as texture for rendering
             */
-            fb.bind = function(program, resolution_name) {
-
-                gl.useProgram(program.program);
-
-                // make this the framebuffer we are rendering to.
-                gl.bindFramebuffer(gl.FRAMEBUFFER, fb.frameBuffer);
-
-                if (resolution_name) {
-                    // Tell the shader the resolution of the framebuffer.
-                    var resolutionLocation = gl.getUniformLocation(program.program, resolution_name);
-                    gl.uniform2f(resolutionLocation, fb.width, fb.height);
-                }
-
-                // Tell webgl the viewport setting needed for framebuffer.
-                gl.viewport(0, 0, fb.width, fb.height);
-
-                gl.useProgram(null);
+            fb.bind = function() {
+                texture.bind.apply(this, arguments);
             };
 
+            /*
+                reads the contents of the buffer back from the gpu into an array
+                Must provide either Float32Array for float, or Uint8Array type array
+                for array to write to.
+            */
             fb.readPixels = function(array) {
                 gl.bindFramebuffer(gl.FRAMEBUFFER, fb.frameBuffer);
 
-                if (useFloat) {
-                    gl.readPixels(0, 0, width, height, gl.RGBA, gl.FLOAT, array);
+                if (params.useFloat) {
+                    gl.readPixels(0, 0, params.width, params.height, gl.RGBA, gl.FLOAT, array);
                 }else{
-                    gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, array);
+                    gl.readPixels(0, 0, params.width, params.height, gl.RGBA, gl.UNSIGNED_BYTE, array);
                 }
 
                 gl.bindFramebuffer(gl.FRAMEBUFFER, null);
