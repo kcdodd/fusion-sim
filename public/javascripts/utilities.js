@@ -255,55 +255,69 @@ define(function (){
                 bindings : [] // used to remember what vertex data to use with this program
             };
 
-            /**
-                Sets the value of a uniform float variable.
 
-                The value can be any number, or an array of numbers up to length 4.
+            /**
+                Sets the value of a uniform variable.
+
+                The value can be any number, or an array of numbers up to length 4,
+                or a texture or framebuffer.
 
                 Arrays assume the variable is of type vec2, vec3, or vec4 in the source.
 
                 If longer arrays are needed, one must use textures.
 
-                @param {string} uniform_name - The variable name as in the source code.
-                @param value - The value to assign to the uniform variable in the next draw
-
             */
-            prog.setUniformFloat = function(uniform_name, value) {
-                gl.useProgram(program);
+            prog.set = function(obj) {
+                for(var param in obj) {
 
-                // get location of variable
-                var uniformLocation = gl.getUniformLocation(program, uniform_name);
+                    if (typeof obj[param] === 'number') {
 
-                if (uniformLocation === null) {
-                    throw new Error("Could not find uniform: " + uniform_name);
-                }
+                        gl.useProgram(program);
 
-                // assign value to variable
-                if (typeof value === 'number') {
+                        // get location of variable
+                        var uniformLocation = gl.getUniformLocation(program, param);
 
-                    gl.uniform1f(uniformLocation, value);
+                        if (uniformLocation === null) {
+                            throw new Error("Could not find uniform: " + param);
+                        }
 
-                }else if (Array.isArray(value)){
-                    if (value.length === 2) {
+                        gl.uniform1f(uniformLocation, obj[param]);
 
-                        gl.uniform2f(uniformLocation, value[0], value[1]);
+                        gl.useProgram(null);
 
-                    }else if (value.length === 3) {
+                    }else if (Array.isArray(obj[param])) {
 
-                        gl.uniform3f(uniformLocation, value[0], value[1], value[2]);
+                        gl.useProgram(program);
 
-                    }else if (value.length === 4) {
+                        // get location of variable
+                        var uniformLocation = gl.getUniformLocation(program, param);
 
-                        gl.uniform4f(uniformLocation, value[0], value[1], value[2], value[3]);
+                        if (uniformLocation === null) {
+                            throw new Error("Could not find uniform: " + param);
+                        }
+
+                        if (obj[param].length === 2) {
+
+                            gl.uniform2f(uniformLocation, obj[param][0], obj[param][1]);
+
+                        }else if (obj[param].length === 3) {
+
+                            gl.uniform3f(uniformLocation, obj[param][0], obj[param][1], obj[param][2]);
+
+                        }else if (obj[param].length === 4) {
+
+                            gl.uniform4f(uniformLocation, obj[param][0], obj[param][1], obj[param][2], obj[param][3]);
+                        }else{
+                            throw new Error("Cannot add uniform value: " + obj[param]);
+                        }
+
+                        gl.useProgram(null);
                     }else{
-                        throw new Error("Cannot add uniform value: " + value);
-                    }
-                }else{
-                    throw new Error("Cannot add uniform value type: " + value);
-                }
 
-                // revert back to what was specified as program to use for drawing
-                gl.useProgram(null);
+                        // try to use a custom binding
+                        obj[param].bind(prog, param);
+                    }
+                }
             };
 
             /**

@@ -89,7 +89,7 @@ define([
 
             // particles
             for(i = 0; i < nparticles; i++) {
-                init_position[i] = [0.2 * Math.random() + 0.0, 0, 0.2*Math.random() + 0.9];
+                init_position[i] = [0.2 * (Math.random() - 0.5), 0.2 * (Math.random() - 0.5), 0.2 * (Math.random() - 0.5) + 1];
                 init_velocity[i] = [0.002 * (Math.random()-0.5), 0.002 * (Math.random()-0.5), 0.002 * (Math.random()-0.5)];
             }
 
@@ -100,8 +100,8 @@ define([
                 source_pdf : source
             });
 
-            simulation.addCurrentLoop(0.8, 2.0, -10000000);
-            simulation.addCurrentLoop(0.8, 0.0, 10000000);
+            //simulation.addCurrentLoop(0.8, 2.0, -10000000);
+            //simulation.addCurrentLoop(0.8, 0.0, 10000000);
 
             //simulation.addCurrentLoop(0.5, 1.0, 10000000);
             //simulation.addCurrentZ(5000000);
@@ -109,7 +109,7 @@ define([
 
             //simulation.addBTheta(0.01);
 
-            //simulation.addSpindleCuspPlasmaField(1.0, 0.5);
+            simulation.addSpindleCuspPlasmaField(1.0, 0.5);
 
             simulation.precalc();
 

@@ -363,22 +363,20 @@ define(['utilities'], function (util){
             })()
         });
 
-        // triangle vertices
-        vertex_positions.bind(programCurrentLoopShape, "a_position");
-        // texture coordinets for vertices
-        texture_coordinates.bind(programCurrentLoopShape, "a_texCoord");
-
-        //programCurrentLoopShape.setUniformFloat("u_a", 50.0 / spec.nr);
-
-        programCurrentLoopShape.setUniformFloat("u_R", 0.5);
+        programCurrentLoopShape.set({
+            "a_position" : vertex_positions,
+            "a_texCoord" : texture_coordinates,
+            "u_R" : 0.5
+        });
 
         programCurrentLoopShape.draw({
             triangles : 6,
             target : B_loop_half
         });
 
-
-        programCurrentLoopShape.setUniformFloat("u_R", 0.1);
+        programCurrentLoopShape.set({
+            "u_R" : 0.1
+        });
 
         programCurrentLoopShape.draw({
             triangles : 6,
@@ -420,9 +418,12 @@ define(['utilities'], function (util){
             })()
         });
 
-        B_loop_half.bind(programCurrentLoop, "u_shape_half");
-        B_loop_tenth.bind(programCurrentLoop, "u_shape_tenth");
-
+        programCurrentLoop.set({
+            "a_position" : vertex_positions,
+            "a_texCoord" : texture_coordinates,
+            "u_shape_half" : B_loop_half,
+            "u_shape_tenth" : B_loop_tenth
+        });
 
         // ---------------------------------------------------------------------
         var programCurrentZ = webgl.linkProgram({
@@ -444,6 +445,11 @@ define(['utilities'], function (util){
 
                 return src_arr.join('\n');
             })()
+        });
+
+        programCurrentZ.set({
+            "a_position" : vertex_positions,
+            "a_texCoord" : texture_coordinates
         });
 
         // ---------------------------------------------------------------------
@@ -468,6 +474,11 @@ define(['utilities'], function (util){
             })()
         });
 
+        programBZ.set({
+            "a_position" : vertex_positions,
+            "a_texCoord" : texture_coordinates
+        });
+
         // ---------------------------------------------------------------------
         var programBTheta = webgl.linkProgram({
             vertexShaderSource : precompute_vert(),
@@ -488,6 +499,11 @@ define(['utilities'], function (util){
 
                 return src_arr.join('\n');
             })()
+        });
+
+        programBTheta.set({
+            "a_position" : vertex_positions,
+            "a_texCoord" : texture_coordinates
         });
 
         // ---------------------------------------------------------------------
@@ -515,11 +531,11 @@ define(['utilities'], function (util){
             })()
         });
 
-        // triangle vertices
-        vertex_positions.bind(programBMag, "a_position");
-        // texture coordinets for vertices
-        texture_coordinates.bind(programBMag, "a_texCoord");
-        B.bind(programBMag, "u_B");
+        programBMag.set({
+            "a_position" : vertex_positions,
+            "a_texCoord" : texture_coordinates,
+            "u_B" : B
+        });
 
         //
         // programs for pre-calculations of the fields
@@ -565,13 +581,12 @@ define(['utilities'], function (util){
             })()
         });
 
-        // triangle vertices
-        vertex_positions.bind(programPre1, "a_position");
-        // texture coordinets for vertices
-        texture_coordinates.bind(programPre1, "a_texCoord");
-
-        B.bind(programPre1, "u_B");
-        programPre1.setUniformFloat("u_h", h);
+        programPre1.set({
+            "a_position" : vertex_positions,
+            "a_texCoord" : texture_coordinates,
+            "u_B" : B,
+            "u_h" : h
+        });
 
         // ---------------------------------------------------------------------
         var programPre2 = webgl.linkProgram({
@@ -607,13 +622,12 @@ define(['utilities'], function (util){
             })()
         });
 
-        // triangle vertices
-        vertex_positions.bind(programPre2, "a_position");
-        // texture coordinets for vertices
-        texture_coordinates.bind(programPre2, "a_texCoord");
-
-        B.bind(programPre2, "u_B");
-        programPre2.setUniformFloat("u_h", h);
+        programPre2.set({
+            "a_position" : vertex_positions,
+            "a_texCoord" : texture_coordinates,
+            "u_B" : B,
+            "u_h" : h
+        });
 
 
         // ---------------------------------------------------------------------
@@ -650,13 +664,12 @@ define(['utilities'], function (util){
             })()
         });
 
-        // triangle vertices
-        vertex_positions.bind(programPre3, "a_position");
-        // texture coordinets for vertices
-        texture_coordinates.bind(programPre3, "a_texCoord");
-
-        B.bind(programPre3, "u_B");
-        programPre3.setUniformFloat("u_h", h);
+        programPre3.set({
+            "a_position" : vertex_positions,
+            "a_texCoord" : texture_coordinates,
+            "u_B" : B,
+            "u_h" : h
+        });
 
 
         // ---------------------------------------------------------------------
@@ -690,14 +703,13 @@ define(['utilities'], function (util){
             })()
         });
 
-        // triangle vertices
-        vertex_positions.bind(programPreA, "a_position");
-        // texture coordinets for vertices
-        texture_coordinates.bind(programPreA, "a_texCoord");
-
-        E.bind(programPreA, "u_E");
-        B.bind(programPreA, "u_B");
-        programPreA.setUniformFloat("u_h", h);
+        programPreA.set({
+            "a_position" : vertex_positions,
+            "a_texCoord" : texture_coordinates,
+            "u_B" : B,
+            "u_E" : E,
+            "u_h" : h
+        });
 
 
         //
@@ -858,13 +870,12 @@ define(['utilities'], function (util){
             fragmentShaderSource : step_rand_frag()
         });
 
-        // triangle vertices
-        vertex_positions.bind(programStepRandB, "a_position");
-        // texture coordinets for vertices
-        texture_coordinates.bind(programStepRandB, "a_texCoord");
-
-        entropy_tex.bind(programStepRandB, "u_entropy");
-        rand_A.bind(programStepRandB, "u_rand");
+        programStepRandB.set({
+            "a_position" : vertex_positions,
+            "a_texCoord" : texture_coordinates,
+            "u_entropy" : entropy_tex,
+            "u_rand" : rand_A
+        });
 
         // ---------------------------------------------------------------------
         // computes value of velocity_B
@@ -873,18 +884,17 @@ define(['utilities'], function (util){
             fragmentShaderSource : step_velocity_frag()
         });
 
-        // triangle vertices
-        vertex_positions.bind(programStepVelocityB, "a_position");
-        // texture coordinets for vertices
-        texture_coordinates.bind(programStepVelocityB, "a_texCoord");
-
-        position_A.bind(programStepVelocityB, "u_position");
-        velocity_A.bind(programStepVelocityB, "u_velocity");
-        rand_A.bind(programStepVelocityB, "u_rand");
-        R1.bind(programStepVelocityB, "u_R_1");
-        R2.bind(programStepVelocityB, "u_R_2");
-        R3.bind(programStepVelocityB, "u_R_3");
-        A.bind(programStepVelocityB, "u_A");
+        programStepVelocityB.set({
+            "a_position" : vertex_positions,
+            "a_texCoord" : texture_coordinates,
+            "u_position" : position_A,
+            "u_velocity" : velocity_A,
+            "u_rand" : rand_A,
+            "u_R_1" : R1,
+            "u_R_2" : R2,
+            "u_R_3" : R3,
+            "u_A" : A
+        });
 
         // ---------------------------------------------------------------------
         // computes value of position_B
@@ -893,19 +903,17 @@ define(['utilities'], function (util){
             fragmentShaderSource : step_position_frag()
         });
 
-        // triangle vertices
-        vertex_positions.bind(programStepPositionB, "a_position");
-        // texture coordinets for vertices
-        texture_coordinates.bind(programStepPositionB, "a_texCoord");
+        programStepPositionB.set({
+            "a_position" : vertex_positions,
+            "a_texCoord" : texture_coordinates,
+            "u_position" : position_A,
+            "u_velocity" : velocity_B,
+            "u_rand" : rand_A,
+            "u_sink" : sink_mask,
+            "u_inv_cdf" : inv_cdf,
+            "u_step_factor" : spec.dt * speed_of_light
+        });
 
-        programStepPositionB.setUniformFloat("u_step_factor", spec.dt * speed_of_light);
-
-        position_A.bind(programStepPositionB, "u_position");
-        velocity_B.bind(programStepPositionB, "u_velocity");
-        rand_A.bind(programStepPositionB, "u_rand");
-
-        sink_mask.bind(programStepPositionB, "u_sink");
-        inv_cdf.bind(programStepPositionB, "u_inv_cdf");
 
         // ---------------------------------------------------------------------
         // computes value of rand_A
@@ -914,13 +922,12 @@ define(['utilities'], function (util){
             fragmentShaderSource : step_rand_frag()
         });
 
-        // triangle vertices
-        vertex_positions.bind(programStepRandA, "a_position");
-        // texture coordinets for vertices
-        texture_coordinates.bind(programStepRandA, "a_texCoord");
-
-        entropy_tex.bind(programStepRandB, "u_entropy");
-        rand_B.bind(programStepRandA, "u_rand");
+        programStepRandA.set({
+            "a_position" : vertex_positions,
+            "a_texCoord" : texture_coordinates,
+            "u_entropy" : entropy_tex,
+            "u_rand" : rand_B
+        });
 
         // ---------------------------------------------------------------------
         // computes value of velocity_A
@@ -929,19 +936,17 @@ define(['utilities'], function (util){
             fragmentShaderSource : step_velocity_frag()
         });
 
-        // triangle vertices
-        vertex_positions.bind(programStepVelocityA, "a_position");
-        // texture coordinets for vertices
-        texture_coordinates.bind(programStepVelocityA, "a_texCoord");
-
-        position_B.bind(programStepVelocityA, "u_position");
-        velocity_B.bind(programStepVelocityA, "u_velocity");
-        rand_B.bind(programStepVelocityA, "u_rand");
-
-        R1.bind(programStepVelocityA, "u_R_1");
-        R2.bind(programStepVelocityA, "u_R_2");
-        R3.bind(programStepVelocityA, "u_R_3");
-        A.bind(programStepVelocityA, "u_A");
+        programStepVelocityA.set({
+            "a_position" : vertex_positions,
+            "a_texCoord" : texture_coordinates,
+            "u_position" : position_B,
+            "u_velocity" : velocity_B,
+            "u_rand" : rand_B,
+            "u_R_1" : R1,
+            "u_R_2" : R2,
+            "u_R_3" : R3,
+            "u_A" : A
+        });
 
         // ---------------------------------------------------------------------
         // computes value of position_A
@@ -950,19 +955,16 @@ define(['utilities'], function (util){
             fragmentShaderSource : step_position_frag()
         });
 
-        // triangle vertices
-        vertex_positions.bind(programStepPositionA, "a_position");
-        // texture coordinets for vertices
-        texture_coordinates.bind(programStepPositionA, "a_texCoord");
-
-        programStepPositionA.setUniformFloat("u_step_factor", spec.dt * speed_of_light);
-
-        position_B.bind(programStepPositionA, "u_position");
-        velocity_A.bind(programStepPositionA, "u_velocity");
-        rand_B.bind(programStepPositionA, "u_rand");
-
-        sink_mask.bind(programStepPositionA, "u_sink");
-        inv_cdf.bind(programStepPositionA, "u_inv_cdf");
+        programStepPositionA.set({
+            "a_position" : vertex_positions,
+            "a_texCoord" : texture_coordinates,
+            "u_position" : position_B,
+            "u_velocity" : velocity_A,
+            "u_rand" : rand_B,
+            "u_sink" : sink_mask,
+            "u_inv_cdf" : inv_cdf,
+            "u_step_factor" : spec.dt * speed_of_light
+        });
 
         // ---------------------------------------------------------------------
         // program for rendering particles into a density and velocity function
@@ -995,7 +997,7 @@ define(['utilities'], function (util){
                         "float v = length(velocity);",
                         "float vr = velocity.x * direction.x + velocity.y * direction.y;",
                         "float va = velocity.y * direction.x - velocity.x * direction.y;",
-                        "v_color = vec4(vr, va, velocity.z, 1.0);",
+                        "v_color = 0.001 * vec4(vr, va, velocity.z, 1.0);",
                         //"v_color = vec4(1.0, 1.0, 1.0, 1.0);",
                     "}"
                 ];
@@ -1031,12 +1033,6 @@ define(['utilities'], function (util){
 
 
         var particles_texcoord = webgl.addVertexData(particles_texcoord_arr);
-        particles_texcoord.bind(programMoments01, "a_particleTexCoord");
-
-
-        position_A.bind(programMoments01, "u_position");
-        velocity_A.bind(programMoments01, "u_velocity");
-
 
 
         var nshape = 11;
@@ -1070,8 +1066,13 @@ define(['utilities'], function (util){
             useFloat: true
         });
 
-        shape_tex.bind(programMoments01, "u_shape");
-        programMoments01.setUniformFloat("u_pointsize", nshape);
+        programMoments01.set({
+            "a_particleTexCoord" : particles_texcoord,
+            "u_position" : position_A,
+            "u_velocity" : velocity_A,
+            "u_shape" : shape_tex,
+            "u_pointsize" : nshape
+        });
 
         // ---------------------------------------------------------------------
         // program for normalizing average of moment
@@ -1092,7 +1093,7 @@ define(['utilities'], function (util){
                         "vec4 M01 = texture2D(u_moments01, v_texCoord);",
                         //"gl_FragColor = vec4(M01.xyz/M01.w, M01.w);",
                         "M01 = (M01.a > 0.0) ? vec4(M01.r / M01.a, M01.g / M01.a, M01.b / M01.a, M01.a) : vec4(0.0, 0.0, 0.0, 0.0);",
-                        "gl_FragColor = M01 * 0.5 / v_texCoord.x;",
+                        "gl_FragColor = 1000.0 * M01 * 0.5 / v_texCoord.x;",
                     "}"
                 ];
 
@@ -1100,12 +1101,11 @@ define(['utilities'], function (util){
             })()
         });
 
-        moments01.bind(programNormalizeMoments01, "u_moments01");
-
-        // triangle vertices
-        vertex_positions.bind(programNormalizeMoments01, "a_position");
-        // texture coordinets for vertices
-        texture_coordinates.bind(programNormalizeMoments01, "a_texCoord");
+        programNormalizeMoments01.set({
+            "a_position" : vertex_positions,
+            "a_texCoord" : texture_coordinates,
+            "u_moments01" : moments01
+        });
 
         // ---------------------------------------------------------------------
         // program for normalizing average of moment
@@ -1119,14 +1119,14 @@ define(['utilities'], function (util){
             fragmentShaderSource : avg_frag()
         });
 
-        moments01_norm.bind(programAvgMoments, "u_next");
-        moments01_avgB.bind(programAvgMoments, "u_avg");
-        programAvgMoments.setUniformFloat("u_ratio", 0.01);
+        programAvgMoments.set({
+            "a_position" : vertex_positions,
+            "a_texCoord" : texture_coordinates,
+            "u_next" : moments01_norm,
+            "u_avg" : moments01_avgB,
+            "u_ratio" : 0.01
+        });
 
-        // triangle vertices
-        vertex_positions.bind(programAvgMoments, "a_position");
-        // texture coordinets for vertices
-        texture_coordinates.bind(programAvgMoments, "a_texCoord");
 
         // ---------------------------------------------------------------------
         // program for rendering density as a color
@@ -1154,13 +1154,12 @@ define(['utilities'], function (util){
             })()
         });
 
-        moments01_avgA.bind(programDensity, "u_moments01");
-        //moments01_norm.bind(programDensity, "u_moments01");
-
-        // triangle vertices
-        vertex_positions.bind(programDensity, "a_position");
-        // texture coordinets for vertices
-        texture_coordinates.bind(programDensity, "a_texCoord");
+        programDensity.set({
+            "a_position" : vertex_positions,
+            "a_texCoord" : texture_coordinates,
+            "u_moments01" : moments01_avgA,
+            //"u_moments01" : moments01_norm
+        });
 
         // ---------------------------------------------------------------------
         // program for setting value of particles
@@ -1184,15 +1183,15 @@ define(['utilities'], function (util){
             })()
         });
 
-        // triangle vertices
-        vertex_positions.bind(programSet, "a_position");
-        // texture coordinets for vertices
-        texture_coordinates.bind(programSet, "a_texCoord");
+        programSet.set({
+            "a_position" : vertex_positions,
+            "a_texCoord" : texture_coordinates
+        });
 
         // ---------------------------------------------------------------------
         // initialize random values
 
-        rand_tex.bind(programSet, "u_value");
+        programSet.set({"u_value" : rand_tex});
 
         programSet.draw({
             triangles : 6,
@@ -1216,7 +1215,8 @@ define(['utilities'], function (util){
                 }
 
                 E_tex.update();
-                E_tex.bind(programSet, "u_value");
+
+                programSet.set({"u_value" : E_tex});
 
                 programSet.draw({
                     triangles : 6,
@@ -1235,7 +1235,8 @@ define(['utilities'], function (util){
                 }
 
                 B_tex.update();
-                B_tex.bind(programSet, "u_value");
+
+                programSet.set({"u_value" : B_tex});
 
                 programSet.draw({
                     triangles : 6,
@@ -1254,7 +1255,7 @@ define(['utilities'], function (util){
 
                 // send values to card
                 position_tex.update();
-                position_tex.bind(programSet, "u_value");
+                programSet.set({"u_value" : position_tex});
 
                 programSet.draw({
                     triangles : 6,
@@ -1278,7 +1279,7 @@ define(['utilities'], function (util){
 
                 // send values to card
                 velocity_tex.update();
-                velocity_tex.bind(programSet, "u_value");
+                programSet.set({"u_value" : velocity_tex});
 
                 programSet.draw({
                     triangles : 6,
@@ -1298,7 +1299,7 @@ define(['utilities'], function (util){
                 }
 
                 sink_mask_tex.update();
-                sink_mask_tex.bind(programSet, "u_value");
+                programSet.set({"u_value" : sink_mask_tex});
 
                 programSet.draw({
                     triangles : 6,
@@ -1386,7 +1387,7 @@ define(['utilities'], function (util){
                 }
 
                 inv_cdf_tex.update();
-                inv_cdf_tex.bind(programSet, "u_value");
+                programSet.set({"u_value" : inv_cdf_tex});
 
                 programSet.draw({
                     triangles : 6,
@@ -1398,9 +1399,11 @@ define(['utilities'], function (util){
 
         out.addCurrentLoop = function(r, z, I) {
 
-            programCurrentLoop.setUniformFloat("u_R", r * factor_r);
-            programCurrentLoop.setUniformFloat("u_Z", z * factor_z);
-            programCurrentLoop.setUniformFloat("u_I", I);
+            programCurrentLoop.set({
+                "u_R" : r * factor_r,
+                "u_Z" : z * factor_z,
+                "u_I" : I
+            })
 
             programCurrentLoop.draw({
                 triangles : 6,
@@ -1411,7 +1414,7 @@ define(['utilities'], function (util){
 
         out.addSpindleCuspPlasmaField = function(r, B_c, beta_c) {
 
-            var I = -5000000;
+            var I = 5000000;
 
             out.addCurrentLoop(0.8 * r, 2.0 * r, -I);
             out.addCurrentLoop(0.8 * r, 0.0, I);
@@ -1442,7 +1445,7 @@ define(['utilities'], function (util){
 
         out.addCurrentZ = function(I) {
 
-            programCurrentZ.setUniformFloat("u_I", I);
+            programCurrentZ.set({"u_I" : I});
 
             programCurrentZ.draw({
                 triangles : 6,
@@ -1453,7 +1456,7 @@ define(['utilities'], function (util){
 
         out.addBZ = function(Bz) {
 
-            programBZ.setUniformFloat("u_Bz", Bz);
+            programBZ.set({"u_Bz" : Bz});
 
             programBZ.draw({
                 triangles : 6,
@@ -1464,7 +1467,7 @@ define(['utilities'], function (util){
 
         out.addBTheta = function(Btheta) {
 
-            programBTheta.setUniformFloat("u_Btheta", Btheta);
+            programBTheta.set({"u_Btheta" : Btheta});
 
             programBTheta.draw({
                 triangles : 6,
@@ -1503,7 +1506,7 @@ define(['utilities'], function (util){
                 target : rand_B,
                 clear_color : [0,0,0,0],
             });
-/*
+
             programStepVelocityB.draw({
                 triangles : 6,
                 target : velocity_B
@@ -1513,13 +1516,13 @@ define(['utilities'], function (util){
                 triangles : 6,
                 target : position_B
             });
-*/
+
             programStepRandA.draw({
                 triangles : 6,
                 target : rand_A,
                 clear_color : [0,0,0,0],
             });
-/*
+
             programStepVelocityA.draw({
                 triangles : 6,
                 target : velocity_A
@@ -1529,13 +1532,11 @@ define(['utilities'], function (util){
                 triangles : 6,
                 target : position_A
             });
-*/
+
         };
 
         out.density = function() {
 
-
-/*
             programMoments01.draw({
                 points : nparticles,
                 target : moments01,
@@ -1553,7 +1554,7 @@ define(['utilities'], function (util){
                 target : moments01_avgA
             });
 
-            moments01_avgA.bind(programSet, "u_value");
+            programSet.set({"u_value" : moments01_avgA});
             programSet.draw({
                 triangles : 6,
                 target : moments01_avgB
@@ -1567,17 +1568,20 @@ define(['utilities'], function (util){
                 triangles : 6,
                 blend : ['SRC_ALPHA', 'ONE']
             });
-*/
-            rand_A.bind(programSet, "u_value");
+
+
+/*
             programStepRandA.draw({
                 triangles : 6,
                 target : rand_A,
                 clear_color : [0,0,0,0],
             });
 
+            programSet.set({"u_value" : rand_A});
             programSet.draw({
                 triangles : 6
             });
+*/
         };
 
         return out;
