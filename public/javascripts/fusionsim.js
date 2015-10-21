@@ -139,6 +139,8 @@ define([
 
                     simulation.density();
 
+                    plot_ctx.fillStyle = "rgba(0,0,0,0)";
+                    plot_ctx.clearRect(0,0,spec.nr, spec.nz);
                     plot_ctx.drawImage(simulation.canvas, 0, 0);
 
                     if ($scope.run) {

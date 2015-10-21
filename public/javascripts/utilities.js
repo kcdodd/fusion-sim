@@ -318,6 +318,8 @@ define(function (){
                         obj[param].bind(prog, param);
                     }
                 }
+
+                return prog;
             };
 
             /**
@@ -403,6 +405,7 @@ define(function (){
             var monolithicArray;
 
             if (Array.isArray(array[0]) === false) {
+
                 numComponents = 1;
                 monolithicArray = new Float32Array(array.length);
 
@@ -410,6 +413,8 @@ define(function (){
                     monolithicArray[i] = array[i];
                 }
             }else{
+                // if it is an array of arrays, it needs to be flattened
+
                 var numComponents = array[0].length;
 
                 monolithicArray = new Float32Array(numComponents*array.length);
@@ -469,18 +474,6 @@ define(function (){
             if (!OES_texture_float) {
                 throw new Error("No support for OES_texture_float");
             }
-        };
-
-        out.additiveBlending = function() {
-            gl.enable(gl.BLEND);
-            gl.blendFunc(gl.ONE, gl.ONE);
-
-            gl.disable(gl.DEPTH_TEST);
-        };
-
-        out.disableBlending = function() {
-            gl.disable(gl.BLEND);
-            gl.enable(gl.DEPTH_TEST);
         };
 
         /**
@@ -655,6 +648,9 @@ define(function (){
 
 
             gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+
+            fbo.width = params.width;
+            fbo.height = params.height;
 
             // Attach a texture to it.
             gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture.texture, 0);
