@@ -20,8 +20,9 @@
 define([
     'angular',
     'utilities',
-    'empic_webgl'
-], function (angular, utilities, empic_webgl){
+    'empic',
+    'matrix_webgl'
+], function (angular, utilities, empic, matrix_webgl){
     "use strict";
 
     var app = angular.module('fusionsim', []);
@@ -31,6 +32,39 @@ define([
         '$interval',
         function($scope, $interval){
 
+/*
+            var eq = matrix_webgl.makeSORIterative({
+                n_power : 1,
+                relaxation : 1.0
+            });
+
+            var A = [];
+            var b = [];
+            var x = [];
+
+            for(var row = 0; row < 16; row++) {
+                A[row] = [];
+
+                for(var col = 0; col < 16; col++) {
+                    A[row][col] = 0.0;
+                }
+
+                A[row][row] = Math.random();
+                b[row] = Math.random();
+            }
+
+            eq.set_matrix(A).set_b(b);
+
+            var result = eq.solve({
+                tolerance : 1E-3,
+                substep : 1,
+                max_iterations : 100
+            });
+
+            console.log("done: " + result.result);
+
+            return;
+*/
 
             $scope.run = false;
             $scope.fps = 0;
@@ -48,7 +82,7 @@ define([
                 particle_charge : 1.602e-19 // C
             };
 
-            var simulation = empic_webgl.makeCylindricalParticlePusher(spec);
+            var simulation = empic.makeCylindricalParticlePusher(spec);
 
             var init_position = [];
             var init_velocity = [];
@@ -100,8 +134,8 @@ define([
                 source_pdf : source
             });
 
-            //simulation.addCurrentLoop(0.8, 2.0, -10000000);
-            //simulation.addCurrentLoop(0.8, 0.0, 10000000);
+            simulation.addCurrentLoop(0.8, 2.0, -10000000);
+            simulation.addCurrentLoop(0.8, 0.0, 10000000);
 
             //simulation.addCurrentLoop(0.5, 1.0, 10000000);
             //simulation.addCurrentZ(5000000);
@@ -109,7 +143,7 @@ define([
 
             //simulation.addBTheta(0.01);
 
-            simulation.addSpindleCuspPlasmaField(1.0, 0.5);
+            //simulation.addSpindleCuspPlasmaField(1.0, 0.5);
 
             simulation.precalc();
 

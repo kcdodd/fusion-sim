@@ -32,9 +32,10 @@ define(['utilities'], function (util){
         return num.toFixed(20);
     };
 
-    exports.makeJacobiIterative = function(spec) {
+    exports.makeSORIterative = function(spec) {
         util.validate_object(spec, {
-            n_power : 'number', // length(vector) = 4 * (2^n_power)^2
+            n_power : 'number', // length(vector) = 4 * (2^n_power)^2,
+            relaxation : [,'number'],
             webgl : [,'object']
         });
 
@@ -46,11 +47,14 @@ define(['utilities'], function (util){
 
         var vec_length = 4 * n_vec;
 
-        var mat_height = Math.pow(2, 2 * spec.n_power + 1);
+        var mat_height = 2 * vec_height * vec_height;
 
         var n_mat = mat_height * mat_height;
 
         out.vec_length = vec_length;
+        out.vec_height = vec_height;
+
+        var omega = spec.relaxation || 1.0;
 
         // create canvas element for webgl to work on
         var webgl;
@@ -58,11 +62,12 @@ define(['utilities'], function (util){
         if (spec.webgl) {
             webgl = spec.webgl;
         }else{
-            canvas = document.createElement("CANVAS");
-            canvas.id = "webgl_canvas_CylindricalParticlePusher";
-            canvas.width = 100;
-            canvas.height = 100;
+            var canvas = document.createElement("CANVAS");
+            canvas.id = "webgl_canvas_JacobiIterative";
+            canvas.width = vec_height;
+            canvas.height = vec_height;
             canvas.style.display = "none";
+            out.canvas = canvas;
 
             document.body.appendChild(canvas);
 
@@ -118,7 +123,7 @@ define(['utilities'], function (util){
             useFloat: true
         });
 
-        var x_set_arr = new Float32Array(4 * n_vec);
+        var x_set_arr = new Float32Array(vec_length);
 
         var x_set_tex = webgl.addTextureArray({
             width: vec_height,
@@ -127,22 +132,34 @@ define(['utilities'], function (util){
             useFloat: true
         });
 
+        var x_guess = webgl.addFrameBuffer({
+            width : vec_height,
+            height : vec_height,
+            useFloat : true
+        });
+
         var x_result = webgl.addFrameBuffer({
             width : vec_height,
             height : vec_height,
             useFloat : true
         });
 
-        var b_set_arr = new Float32Array(4 * n_vec);
+        var x_stats = webgl.addFrameBuffer({
+            width : vec_height,
+            height : vec_height,
+            useFloat : true
+        });
+
+        var b_set_arr = new Float32Array(vec_length);
 
         var b_set_tex = webgl.addTextureArray({
             width: vec_height,
             height: vec_height,
-            array: c_set_arr,
+            array: b_set_arr,
             useFloat: true
         });
 
-        var x_tex, A_tex, b_tex;
+        var x_tex = null, A_tex = null, b_tex = null;
 
         // the iteration matrix
         var R = webgl.addFrameBuffer({
@@ -184,7 +201,7 @@ define(['utilities'], function (util){
             vertexShaderSource : compute_vert(),
             fragmentShaderSource : (function() {
                 var src_arr = [
-                    "precision mediump float;",
+                    "precision highp float;",
 
                     "uniform sampler2D u_value;",
                     // the texCoords passed in from the vertex shader.
@@ -204,11 +221,11 @@ define(['utilities'], function (util){
 
         // ---------------------------------------------------------------------
         // reconfigures the input matrix into the iteration matrix R
-        var programRJacobi = webgl.linkProgram({
+        var programR = webgl.linkProgram({
             vertexShaderSource : compute_vert(),
             fragmentShaderSource : (function() {
                 var src_arr = [
-                    "precision mediump float;",
+                    "precision highp float;",
                     // the original matrix where only red channel is used
                     // and rows extend the width of the texture, instead of being square
                     "uniform sampler2D u_A;",
@@ -217,25 +234,28 @@ define(['utilities'], function (util){
                     "varying vec2 v_texCoord;",
 
                     "void main() {",
+
+                        // pixel location from texture coordinates
+                        "vec2 n = " + N(mat_height) + " * v_texCoord - vec2(0.5);",
+
                         // compute the original row and column from v_texCoord
-                        "vec2 n = " + N(mat_height) + " * v_texCoord;",
                         "float row = floor(n.x / " + N(vec_height) + ") + " + N(2 * vec_height) + " * floor(n.y / " + N(vec_height) + ");",
-                        "float col = 4.0 * (mod(n.x, " + N(vec_height) + ") +  " + N(vec_height) + " * mod(n.y, " + N(vec_height) + "));",
+                        "float col = 4.0 * (mod(n.x, " + N(vec_height) + ") + " + N(vec_height) + " * mod(n.y, " + N(vec_height) + "));",
 
                         // convert to texture coordinate \in [0,1] into the source matrix texture
-                        "float c = " + N(1 / vec_length) + ";",
+                        "float c = " + N(1.0 / vec_length) + ";",
 
                         // the red component is the first element at the column
-                        "float R = (row == col) ? vec4(0.0) : -texture2D(u_A, c * vec2(col, row)).r / texture2D(u_A, c * vec2(row, row)).r;",
+                        "float R = (row == col) ? 0.0 : -texture2D(u_A, c * vec2(col, row)).r / texture2D(u_A, c * vec2(row, row)).r;",
                         // green 2nd column
-                        "float G = (row == col + 1) ? vec4(0.0) : -texture2D(u_A, c * vec2(col + 1, row)).r / texture2D(u_A, c * vec2(row, row)).r;",
+                        "float G = (row == col + 1.0) ? 0.0 : -texture2D(u_A, c * vec2(col + 1.0, row)).r / texture2D(u_A, c * vec2(row, row)).r;",
                         // blue 3rd column
-                        "float B = (row == col + 2) ? vec4(0.0) : -texture2D(u_A, c * vec2(col + 2, row)).r / texture2D(u_A, c * vec2(row, row)).r;",
+                        "float B = (row == col + 2.0) ? 0.0 : -texture2D(u_A, c * vec2(col + 2.0, row)).r / texture2D(u_A, c * vec2(row, row)).r;",
                         // alpha 4th column
-                        "float A = (row == col + 3) ? vec4(0.0) : -texture2D(u_A, c * vec2(col + 3, row)).r / texture2D(u_A, c * vec2(row, row)).r;",
+                        "float A = (row == col + 3.0) ? 0.0 : -texture2D(u_A, c * vec2(col + 3.0, row)).r / texture2D(u_A, c * vec2(row, row)).r;",
 
                         // pack columns into colors
-                        "gl_FragColor = vec4(R, G, B, A);",
+                        "gl_FragColor = " + ((omega !== 1.0) ? N(omega) + " * " : "") + "vec4(R, G, B, A);",
                     "}"
                 ];
 
@@ -243,17 +263,16 @@ define(['utilities'], function (util){
             })()
         }).set({
             "a_position" : vertex_positions,
-            "a_texCoord" : texture_coordinates,
-            "u_A" : A_tex
+            "a_texCoord" : texture_coordinates
         });
 
         // ---------------------------------------------------------------------
         // reconfigures the input vector b into the iteration vector C
-        var programCJacobi = webgl.linkProgram({
+        var programC = webgl.linkProgram({
             vertexShaderSource : compute_vert(),
             fragmentShaderSource : (function() {
                 var src_arr = [
-                    "precision mediump float;",
+                    "precision highp float;",
                     // the original matrix where only red channel is used
                     // and rows extend the width of the texture, instead of being square
                     "uniform sampler2D u_A;",
@@ -263,11 +282,18 @@ define(['utilities'], function (util){
                     "varying vec2 v_texCoord;",
 
                     "void main() {",
-                        "float row = " + N(4 * vec_height) + " * (v_texCoord.x + " + N(vec_height) + " * v_texCoord.y);",
-                        "float R = texture2D(u_b, v_texCoord).r / texture2D(u_A, " + N(1 / vec_length) + " * vec2(row, row)).r;",
-                        "float G = texture2D(u_b, v_texCoord).g / texture2D(u_A, " + N(1 / vec_length) + " * vec2(row + 1, row + 1)).r;",
-                        "float B = texture2D(u_b, v_texCoord).b / texture2D(u_A, " + N(1 / vec_length) + " * vec2(row + 2, row + 2)).r;",
-                        "float A = texture2D(u_b, v_texCoord).a / texture2D(u_A, " + N(1 / vec_length) + " * vec2(row + 3, row + 3)).r;",
+                        // get pixel number
+                        "vec2 n = " + N(vec_height) + " * v_texCoord - vec2(0.5);",
+                        // convert to row number
+                        "float row = 4.0 * (n.x + " + N(vec_height) + " * n.y);",
+
+                        "vec4 b = texture2D(u_b, v_texCoord);",
+                        "float R = b.r / texture2D(u_A, " + N(1 / vec_length) + " * vec2(row, row)).r;",
+                        "float G = b.g / texture2D(u_A, " + N(1 / vec_length) + " * vec2(row + 1.0, row + 1.0)).r;",
+                        "float B = b.b / texture2D(u_A, " + N(1 / vec_length) + " * vec2(row + 2.0, row + 2.0)).r;",
+                        "float A = b.a / texture2D(u_A, " + N(1 / vec_length) + " * vec2(row + 3.0, row + 3.0)).r;",
+
+                        "gl_FragColor = " + ((omega !== 1.0) ? N(omega) + " * " : "") + "vec4(R, G, B, A);",
                     "}"
                 ];
 
@@ -276,8 +302,6 @@ define(['utilities'], function (util){
         }).set({
             "a_position" : vertex_positions,
             "a_texCoord" : texture_coordinates,
-            "u_A" : A_tex,
-            "u_b" : b_tex
         });
 
         // ---------------------------------------------------------------------
@@ -286,7 +310,7 @@ define(['utilities'], function (util){
             vertexShaderSource : compute_vert(),
             fragmentShaderSource : (function() {
                 var src_arr = [
-                    "precision mediump float;",
+                    "precision highp float;",
 
                     "uniform sampler2D u_M;",
                     "uniform sampler2D u_v;",
@@ -294,8 +318,11 @@ define(['utilities'], function (util){
                     "varying vec2 v_texCoord;",
 
                     "void main() {",
+                        // compute the position in the vector from position in matrix
                         "vec2 row = " + N(2 * vec_height) + " * v_texCoord;",
                         "row = row - floor(row);",
+
+                        // perform the matrix-vector product and stor individual results
                         "gl_FragColor = texture2D(u_M, v_texCoord) * texture2D(u_v, row);",
                     "}"
                 ];
@@ -307,6 +334,7 @@ define(['utilities'], function (util){
             "a_texCoord" : texture_coordinates,
         });
 
+        // will store the raw result of the full product
         var mv_product = webgl.addFrameBuffer({
             width : mat_height,
             height : mat_height,
@@ -314,9 +342,10 @@ define(['utilities'], function (util){
         });
 
         // reduces the number of x elements by 1/2 by summing adjacent elements
+        // will be used successively to sum down to the resulting vector
         var sum_frag = function(num_x) {
             var src_arr = [
-                "precision mediump float;",
+                "precision highp float;",
                 // matrix to be summed over
                 "uniform sampler2D u_M;",
                 // the texCoords passed in from the vertex shader.
@@ -335,23 +364,25 @@ define(['utilities'], function (util){
         var sum_buffers = [];
         var sum_programs = [];
 
-        for(i = 0; i < spec.n_power; i++) {
+        for(var i = 0; i < spec.n_power; i++) {
 
             // ---------------------------------------------------------------------
             // program for summing adjacent elements
             //
             sum_programs[i] = webgl.linkProgram({
                 vertexShaderSource : compute_vert(),
-                fragmentShaderSource : sum_frag(Math.pow(2, 2 * spec.n_power + 1 - i))
+                fragmentShaderSource : sum_frag(mat_height / Math.pow(2, i))
             }).set({
                 "a_position" : vertex_positions,
                 "a_texCoord" : texture_coordinates,
+                // the initial sum uses the raw result, while others use previous sums
                 "u_M" : ((i > 0) ? sum_buffers[i-1] : mv_product)
             });
 
+            // will hold the summation result, 1/2 the size of the previous texture in both directions
             sum_buffers[i] = webgl.addFrameBuffer({
-                width : Math.pow(2, 2 * spec.n_power - i),
-                height : Math.pow(2, 2 * spec.n_power - i),
+                width : mat_height / Math.pow(2, i + 1),
+                height : mat_height / Math.pow(2, i + 1),
                 useFloat : true
             });
         }
@@ -362,23 +393,25 @@ define(['utilities'], function (util){
             vertexShaderSource : compute_vert(),
             fragmentShaderSource : (function() {
                 var src_arr = [
-                    "precision mediump float;",
+                    "precision highp float;",
 
                     "uniform sampler2D u_Vsum;",
                     "uniform sampler2D u_C;",
+                    "uniform sampler2D u_X;",
+
                     // the texCoords passed in from the vertex shader.
                     "varying vec2 v_texCoord;",
 
                     "void main() {",
-                        "vec2 offsetx = vec2(" + N(0.5/Math.pow(2, 2 * spec.n_power + 1)) + ", 0.0);",
-                        "vec2 offsety = vec2(0.0, " + N(0.5/Math.pow(2, 2 * spec.n_power + 1)) + ");",
+                        "vec2 offsetx = vec2(" + N(0.5/ (2 * vec_height)) + ", 0.0);",
+                        "vec2 offsety = vec2(0.0, " + N(0.5/ (2 * vec_height)) + ");",
 
                         "float sumR = dot(texture2D(u_Vsum, v_texCoord - offsetx - offsety), vec4(1.0));",
-                        "float sumG = dot(texture2D(u_Vsum, v_texCoord + offsetx - offsety)), vec4(1.0));",
+                        "float sumG = dot(texture2D(u_Vsum, v_texCoord + offsetx - offsety), vec4(1.0));",
                         "float sumB = dot(texture2D(u_Vsum, v_texCoord - offsetx + offsety), vec4(1.0));",
                         "float sumA = dot(texture2D(u_Vsum, v_texCoord + offsetx + offsety), vec4(1.0));",
 
-                        "gl_FragColor = vec4(sumR, sumG, sumB, sumA) + texture2D(u_C, v_texCoord);",
+                        "gl_FragColor = vec4(sumR, sumG, sumB, sumA) + texture2D(u_C, v_texCoord) " + ((omega !== 1.0) ? (" + " + N(1.0 - omega) + " * texture2D(u_X, v_texCoord)") : "") + ";",
                     "}"
                 ];
 
@@ -390,90 +423,128 @@ define(['utilities'], function (util){
             "u_Vsum" : sum_buffers[spec.n_power-1]
         });
 
+        // ---------------------------------------------------------------------
+        // computes statistic between two textures
+        var programStats = webgl.linkProgram({
+            vertexShaderSource : compute_vert(),
+            fragmentShaderSource : (function() {
+                var src_arr = [
+                    "precision highp float;",
 
+                    "uniform sampler2D u_X1;",
+                    "uniform sampler2D u_X2;",
+                    // the texCoords passed in from the vertex shader.
+                    "varying vec2 v_texCoord;",
+
+                    "void main() {",
+                        "vec4 x1 = texture2D(u_X1, v_texCoord);",
+                        "vec4 x2 = texture2D(u_X2, v_texCoord);",
+                        "vec4 diff = abs(x2 - x1);",
+                        // the 0.25 is so the value does not exceed 1.0 for readback
+                        // assuming x1 and x2 are [0,1]
+                        "gl_FragColor = vec4(dot(x1, x2) * 0.25, dot(x1, x1) * 0.25, dot(x2, x2) * 0.25, max(max(max(diff.r, diff.g), diff.b), diff.a));",
+                    "}"
+                ];
+
+                return src_arr.join('\n');
+            })()
+        }).set({
+            "a_position" : vertex_positions,
+            "a_texCoord" : texture_coordinates
+        });
 
         // ---------------------------------------------------------------------
+        // set matrix using a row-major 2D array or texture in red channel
         out.set_matrix = function(matrix) {
-            for(k = 0; k < 4 * n_mat; k++) {
 
-                var row = Math.floor(k / vec_length);
-                var col = k % vec_length;
+            if (Array.isArray(matrix)) {
 
-                m_set_arr[4 * k] = matrix[row][col];
+                for(var row = 0; row < vec_length; row++) {
+                    for(var col = 0; col < vec_length; col++) {
+                        m_set_arr[4 * (col + row * vec_length)] = matrix[row][col];
+                    }
+                }
+
+                m_set_tex.update();
+
+                A_tex = m_set_tex;
+
+            }else{
+                // if it's not an array, try to use it as a texture.
+                A_tex = matrix;
             }
 
-            m_set_tex.update();
-
-            A_tex = m_set_tex;
+            return out;
         };
 
         // ---------------------------------------------------------------------
-        out.set_matrix_tex = function(matrix_tex) {
-
-            A_tex = matrix_tex;
-
-        };
-
-        // ---------------------------------------------------------------------
+        // set the b vector using an array or texture
         out.set_b = function(b) {
 
-            for(j = 0; j < n_vec; j++) {
-                b_set_arr[4 * j] = b[4 * j];
-                b_set_arr[4 * j + 1] = b[4 * j + 1];
-                b_set_arr[4 * j + 2] = b[4 * j + 2];
-                b_set_arr[4 * j + 3] = b[4 * j + 3];
+            if (Array.isArray(b)) {
+
+                for(var j = 0; j < vec_length; j++) {
+                    b_set_arr[j] = b[j];
+                }
+
+                b_set_tex.update();
+
+                b_tex = b_set_tex;
+
+            }else{
+                b_tex = b;
             }
 
-            b_set_tex.update();
-
-            b_tex = b_set_tex;
+            return out;
         };
 
         // ---------------------------------------------------------------------
-        out.set_b_tex = function(b) {
-            b_tex = b;
-        };
-
-        // ---------------------------------------------------------------------
+        // initalize the solution vector with an array or texture with components packed
         out.init_vector = function(vector) {
 
-            for(j = 0; j < n_vec; j++) {
-                x_set_arr[4 * j] = vector[4 * j];
-                x_set_arr[4 * j + 1] = vector[4 * j + 1];
-                x_set_arr[4 * j + 2] = vector[4 * j + 2];
-                x_set_arr[4 * j + 3] = vector[4 * j + 3];
+            if (Array.isArray(vector)) {
+
+                for(var j = 0; j < vec_length; j++) {
+                    x_set_arr[j] = vector[j];
+                }
+
+                x_set_tex.update();
+
+                // render as the current solution result
+                programSet.set({
+                    'u_value' : x_set_tex
+                }).draw({
+                    triangles : 6,
+                    target : x_result
+                });
+
+
+
+            }else{
+                // try using vector as a texture and render directly to initial solution
+                programSet.set({
+                    'u_value' : vector
+                }).draw({
+                    triangles : 6,
+                    target : x_result
+                });
             }
-            x_set_tex.update();
 
-            programSet.set({
-                'u_value' : x_set_tex
-            }).draw({
-                triangles : 6,
-                target : x_result
-            });
-
+            return out;
         };
 
         // ---------------------------------------------------------------------
-        out.init_vector_tex = function(vector_tex) {
-
-            programSet.set({
-                'u_value' : vector_tex
-            }).draw({
-                triangles : 6,
-                target : x_result
-            });
-
-        };
-
-        // ---------------------------------------------------------------------
+        // compute a matrix-vector product, summing each row, and adding an offset.
+        // x = R * x + C
         out.mv_product = function(target) {
+
+
             programMVproduct.draw({
                 triangles : 6,
                 target : mv_product
             });
 
-            for(i = 0; i < num_sums; i++) {
+            for(var i = 0; i < spec.n_power; i++) {
                 sum_programs[i].draw({
                     triangles : 6,
                     target : sum_buffers[i]
@@ -484,30 +555,148 @@ define(['utilities'], function (util){
                 triangles : 6,
                 target : target
             });
+
+
+
+            return out;
         };
 
         // ---------------------------------------------------------------------
-        out.solve = function () {
-            programMVproduct.set({
+        // iteratively solve
 
+        var stats_arr = new Float32Array(vec_length);
+        var x1_arr = new Float32Array(vec_length);
+        var x2_arr = new Float32Array(vec_length);
+
+        out.solve = function (params) {
+            util.validate_object(params, {
+                tolerance : 'number', // maximum relative difference between iterations
+                substep : [,'number'], // take a certain number of iterations before computing statistics
+                max_iterations : [, 'number'] // stop iterations if no convergence after this many steps
             });
-        };
 
-        // ---------------------------------------------------------------------
-        out.x_result = function() {
+            programSet.set({
+                "u_value" : A_tex
+            }).draw({
+                triangles : 6
+            });
 
-            x_result.readPixels(x_set_arr);
+            programR.set({
+                "u_A" : A_tex
+            }).draw({
+                triangles : 6,
+                target : R
+            });
 
-            var result = [];
+            programC.set({
+                "u_A" : A_tex,
+                "u_b" : b_tex
+            }).draw({
+                triangles : 6,
+                target : C
+            });
 
-            for(j = 0; j < n_vec; j++) {
-                result[4*j] = x_set_arr[4*j];
-                result[4*j + 1] = x_set_arr[4*j + 1];
-                result[4*j + 2] = x_set_arr[4*j + 2];
-                result[4*j + 3] = x_set_arr[4*j + 3];
+            // debug
+            C.readPixels(x2_arr);
+            console.log("C " + x2_arr);
+
+            var m = new Float32Array(4 * n_mat);
+            R.readPixels(m);
+            console.log("R " + m);
+
+            programMVproduct.set({
+                "u_M" : R,
+                "u_v" : x_guess
+            });
+
+            programResult.set({
+                "u_C" : C,
+            });
+
+            if (omega !== 1.0) {
+                programResult.set({
+                    "u_X" : x_guess,
+                });
             }
 
-            return result;
+            programStats.set({
+                "u_X1" : x_guess,
+                "u_X2" : x_result
+            });
+
+            programSet.set({
+                'u_value' : x_result
+            });
+
+
+
+            var correlation = 0.0;
+            var max_diff = 0.0;
+
+
+            var x1 = 0;
+            var x2 = 0;
+            var x1x2 = 0;
+            var x1x1 = 0;
+            var x2x2 = 0;
+            var diff = params.tolerance + 1;
+            var iteration = 0;
+
+            // keep iterating until the guess and the result are within tolerance
+            while(iteration < params.max_iterations && diff > params.tolerance) {
+
+
+                for(var sub = 0; sub < (params.substep || 1); sub++) {
+                    // update the guess
+                    programSet.draw({
+                        triangles : 6,
+                        target : x_guess
+                    });
+
+                    // copmute new result
+                    out.mv_product(x_result);
+
+                }
+
+
+                // compute statistics
+                programStats.draw({
+                    triangles : 6,
+                    target : x_stats
+                });
+
+                x_stats.readPixels(stats_arr);
+                x_guess.readPixels(x1_arr);
+                x_result.readPixels(x2_arr);
+
+                max_diff = 0.0;
+
+                for(i = 0; i < n_vec; i++) {
+                    x1 += x1_arr[4 * i] + x1_arr[4 * i + 1] + x1_arr[4 * i + 2] + x1_arr[4 * i + 3];
+                    x2 += x2_arr[4 * i] + x2_arr[4 * i + 1] + x2_arr[4 * i + 2] + x2_arr[4 * i + 3];
+                    x1x2 += stats_arr[4 * i];
+                    x1x1 += stats_arr[4 * i + 1];
+                    x2x2 += stats_arr[4 * i + 2];
+
+                    max_diff = Math.max(max_diff, stats_arr[4 * i + 3]);
+                }
+
+                // Pearson product-moment correlation coefficient
+                correlation = (vec_length * x1x2 - x1 * x2) / Math.sqrt((vec_length * x1x1 - x1 * x1) * (vec_length * x2x2 - x2 * x2));
+                diff = 2 * vec_length * max_diff / (Math.abs(x1) + Math.abs(x2));
+
+                console.log(iteration + ":" + x2_arr);
+
+                iteration++;
+            }
+
+            return {
+                correlation : correlation,
+                diff : diff,
+                iterations : iteration,
+                result : x2_arr
+            };
+
         };
 
         // ---------------------------------------------------------------------
@@ -520,6 +709,8 @@ define(['utilities'], function (util){
 
         return out;
     };
+
+
 
     return exports;
 });

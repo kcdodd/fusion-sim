@@ -148,9 +148,21 @@ define(function (){
             }
         });
 
-        // get the webgl interface object from the canvas context.
-        var gl = canvas.getContext("webgl", {premultipliedAlpha: false}) || canvas.getContext("experimental-webgl", {premultipliedAlpha: false});
-        //var gl = canvas.getContext("webgl") || canvas.getContext("experimental-webgl");
+        // it goes by many names apparently for whatever reason.
+        var glNames = ['webgl','experimental-webgl','moz-webgl','webkit-3d'];
+        var gl = null;
+
+        for(var i = 0; i < glNames.length && !gl; i++) {
+            try {
+                gl = canvas.getContext(glNames[i], {
+                    premultipliedAlpha: false,
+                    //failIfMajorPerformanceCaveat : true
+                });
+            }catch(e) {
+                // don't throw here because maybe a different name will work.
+                gl = null;
+            }
+        }
 
         // if that fails then abandon
         if (!gl) {
@@ -185,7 +197,7 @@ define(function (){
             });
 
             var error;
-            var compiled
+            var compiled;
 
             // create the vertex shader
             var vshader = gl.createShader(gl.VERTEX_SHADER);
@@ -252,7 +264,9 @@ define(function (){
             // lead to undefined behaviour.
             var prog = {
                 program : program,
-                bindings : [] // used to remember what vertex data to use with this program
+                bindings : [], // used to remember what vertex data to use with this program
+                textures : {}, // must bind to texture units before drawing
+                texture_units : {} // keep track of which texture units are used
             };
 
 
@@ -260,7 +274,7 @@ define(function (){
                 Sets the value of a uniform variable.
 
                 The value can be any number, or an array of numbers up to length 4,
-                or a texture or framebuffer.
+                or a texture or a framebuffer.
 
                 Arrays assume the variable is of type vec2, vec3, or vec4 in the source.
 
@@ -308,14 +322,16 @@ define(function (){
 
                             gl.uniform4f(uniformLocation, obj[param][0], obj[param][1], obj[param][2], obj[param][3]);
                         }else{
-                            throw new Error("Cannot add uniform value: " + obj[param]);
+                            throw new Error("Cannot add uniform value: " + param);
                         }
 
                         gl.useProgram(null);
-                    }else{
+                    }else if (obj[param] && obj[param].bind){
 
                         // try to use a custom binding
                         obj[param].bind(prog, param);
+                    }else{
+                        throw new Error("Cannot add uniform value: " + param);
                     }
                 }
 
@@ -332,9 +348,13 @@ define(function (){
 
                 gl.useProgram(program);
 
-                // bind vertex data
+                // need to ensure that
                 for(var i = 0; i < prog.bindings.length; i++) {
                     prog.bindings[i]();
+                }
+
+                for(var prop in prog.textures) {
+                    prog.textures[prop]();
                 }
 
                 if (params.target) {
@@ -385,6 +405,8 @@ define(function (){
 
                 // revert back to what was specified as program to use for drawing
                 gl.useProgram(null);
+
+                return prog;
             };
 
             return prog;
@@ -461,9 +483,6 @@ define(function (){
             return buff;
         };
 
-        // keep a reference to all textures that have been created in webgl
-        var textures = [];
-
         /**
             Enables the use of floating point textures FLOAT, instead of UNSIGNED_BYTE.
             But only if it's supported by webgl
@@ -492,23 +511,29 @@ define(function (){
             @param array - data to assign to texture unit
         */
         out.addTextureArray = function(params) {
+            // validate inputs
+            exports.validate_object(params, {
+                width : 'number',
+                height : 'number',
+                array : [,'object'],
+                useFloat : [, 'boolean']
+            });
 
-            var array = null;
-            if (typeof params.array !== 'undefined') {
-                array = params.array;
-            }
-
-            // use the next available texture unit to store the array
-            gl.activeTexture(gl.TEXTURE0 + textures.length);
-
-            // create a new texture in the given texture unit
+            // create a new texture
             var texture = gl.createTexture();
+
+            // use the first available texture unit to store the array for now
+            gl.activeTexture(gl.TEXTURE0);
             gl.bindTexture(gl.TEXTURE_2D, texture);
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
 
+            var array = null;
+            if (typeof params.array !== 'undefined') {
+                array = params.array;
+            }
 
             if (params.useFloat) {
                 gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, params.width, params.height, 0, gl.RGBA, gl.FLOAT, array);
@@ -518,7 +543,6 @@ define(function (){
 
             // object reference to texture created
             var tex = {
-                index : textures.length,
                 texture : texture,
                 width : params.width,
                 height : params.height,
@@ -530,22 +554,27 @@ define(function (){
 
                 @param {object} program - The program to search for the variable
                 @param {string} tex_name - the variable name of type sampler2D
-                @param {string} tex_size_name - optional name of variable to store the pixel size of the texture as type uniform vec2
             */
-            tex.bind = function(program, tex_name, tex_size_name) {
+            tex.bind = function(program, tex_name) {
+                var tu = program.texture_units[tex_name];
 
-                gl.useProgram(program.program);
-
-                var u_textureLocation = gl.getUniformLocation(program.program, tex_name);
-                gl.uniform1i(u_textureLocation, tex.index);
-
-                // if a variable name is specified for texture size, bind that too
-                if (tex_size_name) {
-                    var textureSizeLocation = gl.getUniformLocation(program.program, tex_size_name);
-                    gl.uniform2f(textureSizeLocation, tex.width, tex.height);
+                if (typeof tu === 'undefined') {
+                    // first time binding in this program so set uniform to tu
+                    gl.useProgram(program.program);
+                    var u_textureLocation = gl.getUniformLocation(program.program, tex_name);
+                    // assign texture unit to uniform location
+                    tu = Object.keys(program.texture_units).length;
+                    program.texture_units[tex_name] = tu;
+                    gl.uniform1i(u_textureLocation, tu);
+                    gl.useProgram(null);
                 }
 
-                gl.useProgram(null);
+                program.textures[tex_name] = function(){
+                    // bind to the texture unit specified
+                    gl.activeTexture(gl.TEXTURE0 + tu);
+                    gl.bindTexture(gl.TEXTURE_2D, texture);
+
+                };
 
                 return tex;
             };
@@ -554,7 +583,7 @@ define(function (){
                 re-Pushes the current local array data to the texture unit.
             */
             tex.update = function() {
-                gl.activeTexture(gl.TEXTURE0 + tex.index);
+                gl.activeTexture(gl.TEXTURE0);
                 gl.bindTexture(gl.TEXTURE_2D, tex.texture);
 
                 if (params.useFloat) {
@@ -564,8 +593,6 @@ define(function (){
                 }
             };
 
-            textures.push(tex);
-
 
             return tex;
 
@@ -573,11 +600,11 @@ define(function (){
 
         out.addTextureImage = function(image) {
 
-            // use the next available texture unit to store the image
-            gl.activeTexture(gl.TEXTURE0 + textures.length);
-
             var texture = gl.createTexture();
+
+            gl.activeTexture(gl.TEXTURE0);
             gl.bindTexture(gl.TEXTURE_2D, texture);
+
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
@@ -589,50 +616,42 @@ define(function (){
             gl.bindTexture(gl.TEXTURE_2D, null);
 
             var tex = {
-                index : textures.length,
                 texture : texture,
-                image : image,
-                webgl : out
+                image : image
             };
 
-            tex.bind = function(program, tex_name, tex_size_name) {
+            tex.bind = function(program, tex_name) {
+                var tu = program.texture_units[tex_name];
 
-                gl.useProgram(program.program);
-
-                var u_textureLocation = gl.getUniformLocation(program.program, tex_name);
-
-                gl.uniform1i(u_textureLocation, tex.index);
-
-
-                if (tex_size_name) {
-                    var textureSizeLocation = gl.getUniformLocation(program.program, tex_size_name);
-
-                    if (textureSizeLocation === null) {
-                        throw new Error("Could not get uniform: " + tex_size_name);
-                    }
-
-                    gl.uniform2f(textureSizeLocation, tex.width, tex.height);
+                if (typeof tu === 'undefined') {
+                    // first time binding in this program so set uniform to tu
+                    gl.useProgram(program.program);
+                    var u_textureLocation = gl.getUniformLocation(program.program, tex_name);
+                    // assign texture unit to uniform location
+                    tu = Object.keys(program.texture_units).length;
+                    program.texture_units[tex_name] = tu;
+                    gl.uniform1i(u_textureLocation, tu);
+                    gl.useProgram(null);
                 }
 
-                gl.useProgram(null);
+                program.textures[tex_name] = function(){
+                    // bind to the texture unit specified
+                    gl.activeTexture(gl.TEXTURE0 + tu);
+                    gl.bindTexture(gl.TEXTURE_2D, texture);
 
-                return tex;
+                };
             };
 
             tex.update = function() {
-                gl.activeTexture(gl.TEXTURE0 + tex.index);
-                gl.bindTexture(gl.TEXTURE_2D, tex.texture);
+                gl.activeTexture(gl.TEXTURE0);
+                gl.bindTexture(gl.TEXTURE_2D, texture);
 
                 gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
             };
 
-            textures.push(tex);
-
             return tex;
 
         };
-
-        var framebuffers = [];
 
         /**
             A frame buffer can be used to take the output of one program and
@@ -657,26 +676,22 @@ define(function (){
 
 
             if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) {
-                    throw new Error("Frame buffer creation failed");
+                throw new Error("Frame buffer creation failed");
             }
 
             gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 
             var fb = {
-                index : framebuffers.length,
                 frameBuffer: fbo,
                 texture : texture,
                 width : params.width,
-                height : params.height,
-                webgl : out
+                height : params.height
             };
 
             /**
-                Use this framebuffer (it's texture) as texture for rendering
+                Use this framebuffer (its texture) as texture for rendering
             */
-            fb.bind = function() {
-                texture.bind.apply(this, arguments);
-            };
+            fb.bind = texture.bind;
 
             /*
                 reads the contents of the buffer back from the gpu into an array
@@ -701,8 +716,6 @@ define(function (){
                 gl.clear(gl.COLOR_BUFFER_BIT);
                 gl.bindFramebuffer(gl.FRAMEBUFFER, null);
             };
-
-            framebuffers.push(fb);
 
             return fb;
         };

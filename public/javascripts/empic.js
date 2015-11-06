@@ -15,7 +15,7 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-define(['utilities', 'matrix_webgl'], function (util, matrix_webgl){
+define(['utilities', 'spindle'], function (util, spindle){
     "use strict";
 
     var exports = {};
@@ -62,11 +62,6 @@ define(['utilities', 'matrix_webgl'], function (util, matrix_webgl){
         var webgl = util.webGL(canvas);
 
         webgl.enableFloatTexture();
-
-        var matrix_solver = matrix_webgl.make({
-            n_power : 4,
-            canvas : canvas
-        });
 
         var vertex_positions = webgl.addVertexData([
             [-1, 1],
@@ -350,7 +345,7 @@ define(['utilities', 'matrix_webgl'], function (util, matrix_webgl){
         });
 
         // ---------------------------------------------------------------------
-        // computes scaled field from current loop.
+        // program for computing field from current loop
         var programCurrentLoop = webgl.linkProgram({
             vertexShaderSource : precompute_vert(),
             fragmentShaderSource : (function() {
@@ -368,63 +363,18 @@ define(['utilities', 'matrix_webgl'], function (util, matrix_webgl){
                     "varying vec2 v_texCoord;",
 
                     "void main() {",
+
                         "float a = v_texCoord.x / u_R;",
                         "float b = (v_texCoord.y - u_Z) / u_R;",
+
                         "vec4 field;",
                         "if(a > 2.0 || b > 2.0){",
                             "field = u_I * vec4(sign(b), 1.0, 1.0, 1.0) * texture2D(u_shape_tenth, vec2(a / 10.0, abs(b) / 10.0));",
                         "}else{",
                             "field = u_I * vec4(sign(b), 1.0, 1.0, 1.0) * texture2D(u_shape_half, vec2(a / 2.0, abs(b) / 2.0));",
                         "}",
+
                         "gl_FragColor = field;",
-
-                    "}"
-                ];
-
-                return src_arr.join('\n');
-            })()
-        }).set({
-            "a_position" : vertex_positions,
-            "a_texCoord" : texture_coordinates,
-            "u_shape_half" : B_loop_half,
-            "u_shape_tenth" : B_loop_tenth
-        });
-
-        // ---------------------------------------------------------------------
-        // program for computing field normal contributions at points from many current loops
-        var programCurrentBoundary = webgl.linkProgram({
-            vertexShaderSource : precompute_vert(),
-            fragmentShaderSource : (function() {
-                var src_arr = [
-                    "precision highp float;",
-
-                    "uniform sampler2D u_shape_half;",
-                    "uniform sampler2D u_shape_tenth;",
-
-                    "uniform sampler2D u_loops;",
-                    "uniform sampler2D u_points;",
-                    "uniform sampler2D u_normals;",
-
-                    // the texCoords passed in from the vertex shader.
-                    "varying vec2 v_texCoord;",
-
-                    "void main() {",
-                        "vec4 loop = texture2D(u_loops, v_texCoord);",
-                        "vec4 point = texture2D(u_points, v_texCoord);",
-                        "vec4 normal = texture2D(u_normals, v_texCoord);",
-
-                        "float a = point.x / loop.x;",
-                        "float b = (point.z - loop.z) / loop.x;",
-
-                        "vec4 field;",
-
-                        "if(a > 2.0 || b > 2.0){",
-                            "field = loop.a * vec4(sign(b), 1.0, 1.0, 1.0) * texture2D(u_shape_tenth, vec2(a / 10.0, abs(b) / 10.0));",
-                        "}else{",
-                            "field = loop.a * vec4(sign(b), 1.0, 1.0, 1.0) * texture2D(u_shape_half, vec2(a / 2.0, abs(b) / 2.0));",
-                        "}",
-
-                        "gl_FragColor = vec4(dot(field, normal), 0.0, 0.0, 0.0);",
 
                     "}"
                 ];
@@ -1405,79 +1355,33 @@ define(['utilities', 'matrix_webgl'], function (util, matrix_webgl){
                 "u_R" : r * factor_r,
                 "u_Z" : z * factor_z,
                 "u_I" : I
-            })
-
-            programCurrentLoop.draw({
+            }).draw({
                 triangles : 6,
                 target : B,
                 blend : ['ONE', 'ONE']
             });
         };
 
+        /**
+            Solves the boundary conditions for a perfect conductor in center of
+            a spindle cusp magnetic field.
+        */
         out.addSpindleCuspPlasmaField = function(r, B_c, beta_c) {
-            var n_loops = 1000;
 
-            var loops_arr = new Float32Array(4 * n_loops * n_loops);
-
-            var loops_tex = webgl.addTextureArray({
-                width: n_loops,
-                height: n_loops,
-                array: loops_arr,
-                useFloat : true
+            var currents = spindle.makeSpindleCuspPlasmaField({
+                radius : spec.radius, // meters
+                height : spec.height,
+                nr : spec.nr,
+                nz : spec.nz,
+                webgl : webgl
             });
-
-            var points_arr = new Float32Array(4 * n_loops * n_loops);
-
-            var points_tex = webgl.addTextureArray({
-                width: n_loops,
-                height: n_loops,
-                array: points_arr,
-                useFloat : true
-            });
-
-            var normals_arr = new Float32Array(4 * n_loops * n_loops);
-
-            var normals_tex = webgl.addTextureArray({
-                width: n_loops,
-                height: n_loops,
-                array: normals_arr,
-                useFloat : true
-            });
-
-            var I = 5000000;
-
-            out.addCurrentLoop(0.8 * r, 2.0 * r, -I);
-            out.addCurrentLoop(0.8 * r, 0.0, I);
-
-
-            var p0 = 0.65 * I * (1/ 998);
-
-
-            var a = 0.4;
-            var R =  r * Math.sqrt(1 + a * a);
-
-            var theta = Math.asin(a / R) + Math.PI;
-            var arc = 0.5 * Math.PI - 2.0 * Math.asin(a / R);
-
-            for(i = 1; i < 1000; i++) {
-                var phi = i * arc / 1000 + theta;
-
-                var px = i / 1000;
-
-                //var I_phi = p0 * (1.0 + 0.1/ px + Math.exp(-px * 6.0) + 0.2 * Math.exp(-px * 4.0));
-                var I_phi = p0 * (1.0 + 5 * Math.exp(-px * 10));
-
-                out.addCurrentLoop(R * Math.cos(phi) + r, R * Math.sin(phi) + 2.0 * r, I_phi);
-                out.addCurrentLoop(R * Math.cos(-phi) + r, R * Math.sin(-phi), -I_phi);
-            }
-
         };
 
         out.addCurrentZ = function(I) {
 
-            programCurrentZ.set({"u_I" : I});
-
-            programCurrentZ.draw({
+            programCurrentZ.set({
+                "u_I" : I
+            }).draw({
                 triangles : 6,
                 target : B,
                 blend : ['ONE', 'ONE']
@@ -1486,9 +1390,9 @@ define(['utilities', 'matrix_webgl'], function (util, matrix_webgl){
 
         out.addBZ = function(Bz) {
 
-            programBZ.set({"u_Bz" : Bz});
-
-            programBZ.draw({
+            programBZ.set({
+                "u_Bz" : Bz
+            }).draw({
                 triangles : 6,
                 target : B,
                 blend : ['ONE', 'ONE']
@@ -1497,9 +1401,9 @@ define(['utilities', 'matrix_webgl'], function (util, matrix_webgl){
 
         out.addBTheta = function(Btheta) {
 
-            programBTheta.set({"u_Btheta" : Btheta});
-
-            programBTheta.draw({
+            programBTheta.set({
+                "u_Btheta" : Btheta
+            }).draw({
                 triangles : 6,
                 target : B,
                 blend : ['ONE', 'ONE']
